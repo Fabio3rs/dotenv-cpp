@@ -42,7 +42,7 @@ You can integrate `dotenv` into your project using Conan:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-repo/dotenv.git
+   git clone https://github.com/Fabio3rs/dotenv-cpp.git
    ```
 
 2. Include the `include` directory in your project's include paths.
@@ -136,7 +136,7 @@ int main() {
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-repo/dotenv.git
+   git clone https://github.com/Fabio3rs/dotenv-cpp.git
    cd dotenv
    ```
 
