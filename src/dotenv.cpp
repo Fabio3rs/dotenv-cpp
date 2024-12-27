@@ -2,12 +2,18 @@
 #include "dotenv.h"
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <string>
 #include <string_view>
-#include <system_error>
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <cstdlib>
+#define setenv(key, value, overwrite) _putenv_s(key, value)
+#define unsetenv(key) _putenv_s(key, "")
+#else
 #include <unistd.h>
+#endif
 
 extern "C" {
 int dotenv_load(const char *path, int replace) {

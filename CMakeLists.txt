@@ -1,7 +1,16 @@
 cmake_minimum_required(VERSION 3.12)
 project(dotenv C CXX)
 
-if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
+set(IS_CONAN FALSE)
+get_cmake_property(all_variables CACHE_VARIABLES)
+foreach (var ${all_variables})
+    if ("${var}" MATCHES "CONAN")
+        set(IS_CONAN TRUE)
+    endif()
+endforeach()
+
+if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}" AND NOT IS_CONAN)
+    message(STATUS "Setting up dotenv project")
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +35,15 @@ else()
     option(DOTENV_ENABLE_TESTS "Enable tests" OFF)
     option(DOTENV_ENABLE_SANITIZERS "Enable sanitizers" OFF)
     option(DOTENV_BUILD_EXE "Enable a simple dotenv test executable" OFF)
+endif()
+
+if (IS_CONAN)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_EXTENSIONS OFF)
 endif()
 
 if(DOTENV_ENABLE_TESTS)
@@ -82,14 +100,14 @@ if (DOTENV_LINKER_FLAGS)
 endif()
 
 if (DOTENV_BUILD_EXE)
-    add_executable(dotenv "src/main.cpp")
-    target_link_libraries(dotenv dotenv_lib)
+    add_executable(dotenvexe "src/main.cpp")
+    target_link_libraries(dotenvexe dotenv_lib)
 
     if (DOTENV_COMPILER_FLAGS)
-        target_compile_options(dotenv PRIVATE ${DOTENV_COMPILER_FLAGS})
+        target_compile_options(dotenvexe PRIVATE ${DOTENV_COMPILER_FLAGS})
     endif()
     if (DOTENV_LINKER_FLAGS)
-        target_link_options(dotenv PRIVATE ${DOTENV_LINKER_FLAGS})
+        target_link_options(dotenvexe PRIVATE ${DOTENV_LINKER_FLAGS})
     endif()
 endif()
 
@@ -103,7 +121,7 @@ install(TARGETS dotenv_lib
 )
 
 # Install headers
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/*
     DESTINATION include
 )
 
