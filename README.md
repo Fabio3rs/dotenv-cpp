@@ -130,7 +130,7 @@ int main() {
 
 ### Requirements
 
-- A C++20-compliant compiler.
+- A C++17-compliant compiler.
 - CMake 3.12 or later.
 
 ### Steps
