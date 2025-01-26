@@ -19,6 +19,7 @@ The API, functionality, and implementation details are subject to change. Use it
 
 ### Using Conan
 
+***Note:*** *This method is not available yet. The package will be published to Conan Center once the library is stable.*
 You can integrate `dotenv` into your project using Conan:
 
 1. Add `dotenv` to your `conanfile.txt`:
