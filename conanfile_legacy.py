@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-Conan 2.0 recipe for dotenv-cpp library.
+Conan 1.x recipe for dotenv-cpp library.
 High-reliability C++ library for environment variable management.
 """
 
-from conan import ConanFile
-from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout, CMakeDeps
-from conan.tools.files import copy
-from conan.errors import ConanInvalidConfiguration
+from conans import ConanFile, CMake, tools
 
 
 class DotenvConan(ConanFile):
@@ -38,6 +35,7 @@ class DotenvConan(ConanFile):
         "enable_sanitizers": False
     }
 
+    generators = "cmake", "cmake_find_package"
     exports_sources = "CMakeLists.txt", "src/*", "include/*", "tests/*", "benchmarks/*", "cmake/*"
 
     def config_options(self):
@@ -50,42 +48,39 @@ class DotenvConan(ConanFile):
         if self.options.shared:
             del self.options.fPIC
 
-    def validate(self):
-        """Validate package configuration."""
-        # Require C++20
-        from conan.tools.build import check_min_cppstd
-        check_min_cppstd(self, "20")
+        # C++20 requirement
+        if self.settings.compiler.cppstd:
+            tools.check_min_cppstd(self, "20")
 
     def build_requirements(self):
         """Declare build-time dependencies."""
         if self.options.enable_tests:
-            self.test_requires("gtest/1.11.0")
+            self.build_requires("gtest/1.11.0")
         if self.options.enable_benchmarks:
             # Google Benchmark will be fetched by CMake
             pass
 
-    def layout(self):
-        """Define layout for the package."""
-        cmake_layout(self)
-
-    def generate(self):
-        """Generate files needed for build."""
-        deps = CMakeDeps(self)
-        deps.generate()
-
-        tc = CMakeToolchain(self)
+    def _cmake(self):
+        """Configure CMake build."""
+        cmake = CMake(self)
 
         # Configure options
-        tc.variables["DOTENV_ENABLE_TESTS"] = self.options.enable_tests
-        tc.variables["DOTENV_ENABLE_BENCHMARKS"] = self.options.enable_benchmarks
-        tc.variables["DOTENV_ENABLE_SANITIZERS"] = self.options.enable_sanitizers
+        cmake.definitions["DOTENV_ENABLE_TESTS"] = self.options.enable_tests
+        cmake.definitions["DOTENV_ENABLE_BENCHMARKS"] = self.options.enable_benchmarks
+        cmake.definitions["DOTENV_ENABLE_SANITIZERS"] = self.options.enable_sanitizers
 
-        tc.generate()
+        # Build type specific flags
+        if self.settings.build_type == "Release":
+            cmake.definitions["CMAKE_BUILD_TYPE"] = "Release"
+        elif self.settings.build_type == "Debug":
+            cmake.definitions["CMAKE_BUILD_TYPE"] = "Debug"
+
+        cmake.configure()
+        return cmake
 
     def build(self):
         """Build the package."""
-        cmake = CMake(self)
-        cmake.configure()
+        cmake = self._cmake()
         cmake.build()
 
         # Run tests if enabled
@@ -94,26 +89,34 @@ class DotenvConan(ConanFile):
 
     def package(self):
         """Package the built artifacts."""
-        cmake = CMake(self)
+        cmake = self._cmake()
         cmake.install()
 
         # Copy license
-        copy(self, "LICENSE", src=self.source_folder, dst=self.package_folder / "licenses")
+        self.copy("LICENSE", dst="licenses")
 
     def package_info(self):
         """Define package information for consumers."""
-        # Main library component
-        self.cpp_info.components["dotenv_lib"].libs = ["dotenv_lib"]
-        self.cpp_info.components["dotenv_lib"].includedirs = ["include"]
-        self.cpp_info.components["dotenv_lib"].cppstd = "20"
+        # Main library target
+        self.cpp_info.libs = ["dotenv_lib"]
+
+        # Include directories
+        self.cpp_info.includedirs = ["include"]
+
+        # Compiler features
+        self.cpp_info.cppstd = "20"
 
         # System dependencies
         if self.settings.os in ["Linux", "FreeBSD"]:
+            self.cpp_info.system_libs = ["pthread"]
+
+        # CMake target names for modern CMake
+        self.cpp_info.names["cmake_find_package"] = "dotenv"
+        self.cpp_info.names["cmake_find_package_multi"] = "dotenv"
+
+        # Define component for the library
+        self.cpp_info.components["dotenv_lib"].libs = ["dotenv_lib"]
+        self.cpp_info.components["dotenv_lib"].includedirs = ["include"]
+        self.cpp_info.components["dotenv_lib"].cppstd = "20"
+        if self.settings.os in ["Linux", "FreeBSD"]:
             self.cpp_info.components["dotenv_lib"].system_libs = ["pthread"]
-
-        # Default component for backward compatibility
-        self.cpp_info.components["dotenv_lib"].set_property("cmake_target_name", "dotenv::dotenv_lib")
-
-        # Legacy names for older consumers
-        self.cpp_info.set_property("cmake_file_name", "dotenv")
-        self.cpp_info.set_property("cmake_target_name", "dotenv::dotenv")

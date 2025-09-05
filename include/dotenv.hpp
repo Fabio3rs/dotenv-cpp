@@ -25,6 +25,8 @@ inline void errcToException(std::errc ec, std::string_view value) {
 
 int load(std::string_view path = ".env", int replace = 1) noexcept;
 std::string_view get(std::string_view key, std::string_view default_value = "");
+std::string get_string(std::string_view key,
+                       std::string_view default_value = "");
 
 template <class T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
 inline T get(std::string_view key,
@@ -94,5 +96,29 @@ inline T get([[maybe_unused]] ThrowPolicy policy, std::string_view key,
 
 bool has(std::string_view key);
 void set(std::string_view key, std::string_view value, bool replace = true);
+void unset(std::string_view key);
 void save(std::string_view path);
+
+// APIs modernas com std::optional
+template <class T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+inline std::optional<T> get_optional(std::string_view key) {
+    auto value = get(key, std::string_view{});
+
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    T result{};
+    auto [ptr, ec] =
+        std::from_chars(value.data(), value.data() + value.size(), result);
+
+    if (ec != std::errc{}) {
+        return std::nullopt;
+    }
+
+    return result;
+}
+
+std::optional<std::string> get_optional_string(std::string_view key);
+
 } // namespace dotenv

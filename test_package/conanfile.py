@@ -1,26 +1,30 @@
+from conan import ConanFile
+from conan.tools.cmake import CMake, CMakeToolchain, CMakeDeps, cmake_layout
+from conan.tools.build import can_run
 import os
-
-from conans import ConanFile, CMake, tools
 
 
 class DotenvTestConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
-    generators = "cmake"
-    requires = "dotenv/0.1"
+
+    def requirements(self):
+        self.requires(self.tested_reference_str)
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        deps = CMakeDeps(self)
+        deps.generate()
+        tc = CMakeToolchain(self)
+        tc.generate()
 
     def build(self):
         cmake = CMake(self)
-        # Current dir is "test_package/build/<build_id>" and CMakeLists.txt is
-        # in "test_package"
         cmake.configure()
         cmake.build()
 
-    def imports(self):
-        self.copy("*.dll", dst="bin", src="bin")
-        self.copy("*.dylib*", dst="bin", src="lib")
-        self.copy('*.so*', dst='bin', src='lib')
-
     def test(self):
-        if not tools.cross_building(self):
-            os.chdir("bin")
-            self.run(".%sexample" % os.sep)
+        if can_run(self):
+            cmd = os.path.join(self.cpp.build.bindirs[0], "example")
+            self.run(cmd, env="conanrun")

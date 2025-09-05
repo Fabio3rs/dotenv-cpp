@@ -4,8 +4,8 @@
 extern "C" {
 #endif
 
-int dotenv_load(const char *path = ".env", int replace = 1);
-const char *dotenv_get(const char *key, const char *default_value = "");
+int dotenv_load(const char *path, int replace);
+const char *dotenv_get(const char *key, const char *default_value);
 void dotenv_save(const char *path);
 
 #ifdef __cplusplus

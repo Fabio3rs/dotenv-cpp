@@ -1,23 +1,20 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.15)
 project(PackageTest CXX)
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup()
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-message(STATUS "CONAN_LIBS: ${CONAN_LIBS}")
-message(STATUS "CONAN_LIBS_RELEASE: ${CONAN_LIBS_RELEASE}")
-
-# debug include dirs
-message(STATUS "CONAN_INCLUDE_DIRS: ${CONAN_INCLUDE_DIRS}")
+# Find the dotenv package
+find_package(dotenv REQUIRED)
 
 add_executable(example example.cpp)
-target_link_libraries(example ${CONAN_LIBS})
+target_link_libraries(example dotenv::dotenv)
 
-# copy .env after build
-add_custom_command(TARGET example POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
+# Copy .env file to build directory
+configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/.env
-    $<TARGET_FILE_DIR:example>/.env
+    ${CMAKE_CURRENT_BINARY_DIR}/.env
+    COPYONLY
 )
 
 # CTest is a testing tool that can be used to test your project.
