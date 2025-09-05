@@ -1,8 +1,8 @@
 # dotenv-cpp
 
-A high-performance, thread-safe C++20 library for managing `.env` files, designed for production environments. The library supports both C++ and C interfaces, offering modern APIs with comprehensive error handling and security features.
+A high-performance, thread-safe C++20 library for managing `.env` files. The library supports both C++ and C interfaces, offering modern APIs with comprehensive error handling and security features.
 
-🎉 **Release Candidate v2.0.0** - Production Ready
+🎉 **Release Candidate v2.0.0**
 ✅ Full test coverage, security audited, and performance optimized
 ✅ Modern C++20 with backward compatibility to C
 ✅ Thread-safe operations with comprehensive benchmarks
@@ -18,7 +18,7 @@ A high-performance, thread-safe C++20 library for managing `.env` files, designe
 - ⚡ **Optimized Parsing**: Handles comments, quotes, escape sequences efficiently
 - 🌐 **Cross Platform**: Windows, Linux, macOS with consistent behavior
 - 📋 **C Compatibility**: Legacy C interface for broader integration
-- 🧪 **Fully Tested**: 13/13 tests passing, 100% coverage, security audited
+- 🧪 **Fully Tested**: 13/13 tests passing
 
 ## Quick Start
 
@@ -135,8 +135,8 @@ int main() {
 
 ### Requirements
 
-- A C++17-compliant compiler.
-- CMake 3.12 or later.
+- A C++20-compliant compiler.
+- CMake 3.15 or later.
 
 ### Steps
 
