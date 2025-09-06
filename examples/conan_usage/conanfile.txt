@@ -1,0 +1,9 @@
+[requires]
+dotenv/2.0.0
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+dotenv:shared=False

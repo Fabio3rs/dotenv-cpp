@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.15)
+
+# Add custom CMake modules path
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Versioning
 set(DOTENV_VERSION_MAJOR 2)
@@ -24,7 +27,20 @@ endforeach()
 if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}" AND NOT IS_CONAN)
     add_compile_definitions(-DFORTIFY_SOURCE=3)
     message(STATUS "Setting up dotenv project")
-    set(CMAKE_CXX_STANDARD 20)
+
+    # Include modern feature detection
+    include(DotenvFeatureDetection)
+
+    # Detect C++23 capabilities
+    if (DOTENV_FORCE_CPP23)
+        set(CMAKE_CXX_STANDARD 23)
+        set(DOTENV_HAS_EXPECTED TRUE)
+        message(STATUS "Forcing C++23 as requested")
+    else()
+        dotenv_detect_cpp23_features()
+        set(CMAKE_CXX_STANDARD ${DOTENV_DETECTED_CXX_STANDARD})
+    endif()
+
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -58,6 +74,7 @@ if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}" AND NOT IS_CONA
     option(DOTENV_BUILD_EXE "Enable a simple dotenv test executable" ON)
     option(DOTENV_ENABLE_BENCHMARKS "Enable benchmarks with Google Benchmark" OFF)
     option(DOTENV_ENABLE_WERROR "Enable -Werror/-WX (recommended for CI)" OFF)
+    option(DOTENV_FORCE_CPP23 "Force C++23 standard (requires compatible compiler)" OFF)
 else()
     option(DOTENV_ENABLE_TESTS "Enable tests" OFF)
     option(DOTENV_ENABLE_SANITIZERS "Enable sanitizers" OFF)
@@ -66,12 +83,18 @@ else()
 endif()
 
 if (IS_CONAN)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_C_EXTENSIONS OFF)
+    # Include feature detection for Conan builds too
+    include(DotenvFeatureDetection)
+
+    # Detect C++23 capabilities
+    dotenv_detect_cpp23_features()
+    set(CMAKE_CXX_STANDARD ${DOTENV_DETECTED_CXX_STANDARD})
+
+    set(CMAKE_C_STANDARD 11)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    set(CMAKE_C_EXTENSIONS OFF)
 endif()
 
 if(DOTENV_ENABLE_TESTS)
@@ -139,14 +162,13 @@ endif()
 
 # Check for AVX2 support if SIMD is enabled
 if(DOTENV_ENABLE_SIMD)
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+    dotenv_detect_avx2_support()
 
-    if(COMPILER_SUPPORTS_AVX2)
-        message(STATUS "AVX2 support detected, enabling SIMD optimizations")
+    if(DOTENV_AVX2_SUPPORTED)
+        message(STATUS "✅ AVX2 SIMD optimizations enabled")
         add_compile_definitions(DOTENV_SIMD_ENABLED)
     else()
-        message(WARNING "AVX2 not supported by compiler, disabling SIMD optimizations")
+        message(WARNING "⚠️  AVX2 not supported, disabling SIMD optimizations")
         set(DOTENV_ENABLE_SIMD OFF)
     endif()
 endif()
@@ -188,10 +210,15 @@ target_include_directories(dotenv_lib
 target_compile_features(dotenv_lib PUBLIC cxx_std_20)
 
 # Add SIMD-specific compilation flags
-if(DOTENV_ENABLE_SIMD AND COMPILER_SUPPORTS_AVX2)
+if(DOTENV_ENABLE_SIMD AND DOTENV_AVX2_SUPPORTED)
     target_compile_options(dotenv_lib PRIVATE -mavx2)
     target_compile_definitions(dotenv_lib PRIVATE DOTENV_SIMD_ENABLED)
-    message(STATUS "SIMD optimizations enabled with AVX2")
+    message(STATUS "✅ SIMD optimizations enabled with AVX2")
+endif()
+
+# Print capabilities summary
+if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}" AND NOT IS_CONAN)
+    dotenv_print_capabilities()
 endif()
 
 if (DOTENV_COMPILER_FLAGS)
@@ -276,4 +303,15 @@ endif()
 
 if(DOTENV_ENABLE_BENCHMARKS)
     add_subdirectory(benchmarks)
+endif()
+
+# Examples - always build when this is the main project
+if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}" AND NOT IS_CONAN)
+    option(DOTENV_BUILD_EXAMPLES "Build example programs" ON)
+else()
+    option(DOTENV_BUILD_EXAMPLES "Build example programs" OFF)
+endif()
+
+if(DOTENV_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()

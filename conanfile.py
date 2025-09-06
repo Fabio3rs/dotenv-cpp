@@ -17,7 +17,7 @@ class DotenvConan(ConanFile):
     version = "2.0.0"
     license = "MIT"
     author = "dotenv-cpp team"
-    url = "https://github.com/yourusername/dotenv-cpp"
+    url = "https://github.com/Fabio3rs/dotenv-cpp"
     description = "High-performance, thread-safe C++20 library for .env file parsing"
     topics = ("cpp", "environment", "config", "dotenv", "high-performance")
 

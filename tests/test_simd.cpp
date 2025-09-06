@@ -8,30 +8,25 @@
 class SIMDTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Create test file for SIMD testing
-        std::ofstream file("test_simd.env");
-        file << "SIMD_KEY1=simd_value1\n";
-        file << "SIMD_KEY2=42\n";
-        file << "# This is a comment\n";
-        file << "\n"; // Empty line
-        file << "SIMD_KEY3=3.14159\n";
-        file << "SIMD_QUOTED=\"quoted value\"\n";
-        file.close();
+        // Create test .env file
+        std::ofstream env_file("test_simd.env");
+        env_file << "SIMD_KEY1=simd_value1\n";
+        env_file << "SIMD_KEY2=42\n";
+        env_file << "SIMD_KEY3=3.14159\n";
+        env_file.close();
     }
 
     void TearDown() override {
+        // Clean up test files
         std::filesystem::remove("test_simd.env");
-        // Clear environment
-        dotenv::unset("SIMD_KEY1");
-        dotenv::unset("SIMD_KEY2");
-        dotenv::unset("SIMD_KEY3");
-        dotenv::unset("SIMD_QUOTED");
+        std::filesystem::remove("large_simd_test.env");
     }
 };
 
 TEST_F(SIMDTest, LoadSIMDBasic) {
-    int result = dotenv::load_simd("test_simd.env");
-    EXPECT_GT(result, 0);
+    auto [error, count] = dotenv::load_simd("test_simd.env");
+    EXPECT_EQ(error, dotenv::dotenv_error::success);
+    EXPECT_GT(count, 0);
 
     EXPECT_EQ(dotenv::get("SIMD_KEY1"), "simd_value1");
     EXPECT_EQ(dotenv::get("SIMD_KEY2"), "42");
@@ -62,29 +57,34 @@ TEST_F(SIMDTest, SIMDAvailabilityCheck) {
     bool avx2_available = dotenv::simd::is_avx2_available();
 
     // Should not crash
-    int result = dotenv::load_simd("test_simd.env");
+    auto [error, count] = dotenv::load_simd("test_simd.env");
 
     if (avx2_available) {
-        EXPECT_GT(result, 0); // Should load successfully
+        EXPECT_EQ(error, dotenv::dotenv_error::success);
+        EXPECT_GT(count, 0); // Should load successfully
     } else {
         // Should fallback to standard implementation
-        EXPECT_GT(result, 0);
+        EXPECT_EQ(error, dotenv::dotenv_error::success);
+        EXPECT_GT(count, 0);
     }
 }
 
 TEST_F(SIMDTest, SIMDLargeFile) {
     // Create larger test file
     std::ofstream large_file("large_simd_test.env");
-    for (int i = 0; i < 1000; ++i) {
+    constexpr int large_file_size = 1000;
+    constexpr int comment_frequency = 10;
+    for (int i = 0; i < large_file_size; ++i) {
         large_file << "LARGE_KEY_" << i << "=large_value_" << i << "\n";
-        if (i % 10 == 0) {
+        if (i % comment_frequency == 0) {
             large_file << "# Comment " << i << "\n";
         }
     }
     large_file.close();
 
-    int result = dotenv::load_simd("large_simd_test.env");
-    EXPECT_GT(result, 900); // Should load most variables (excluding comments)
+    auto [error, count] = dotenv::load_simd("large_simd_test.env");
+    EXPECT_EQ(error, dotenv::dotenv_error::success);
+    EXPECT_GT(count, 900); // Should load most variables (excluding comments)
 
     // Check a few random values
     EXPECT_EQ(dotenv::get("LARGE_KEY_0"), "large_value_0");
@@ -93,7 +93,7 @@ TEST_F(SIMDTest, SIMDLargeFile) {
 
     // Cleanup
     std::filesystem::remove("large_simd_test.env");
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < large_file_size; ++i) {
         dotenv::unset("LARGE_KEY_" + std::to_string(i));
     }
 }

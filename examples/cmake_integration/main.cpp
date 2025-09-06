@@ -2,31 +2,33 @@
 #include <iostream>
 
 int main() {
-    std::cout << "=== CMake Integration Example ===" << std::endl;
+    std::cout << "=== CMake Integration Example ===\n";
 
-    // Carregar configurações
-    if (dotenv::load("config.env") < 0) {
-        std::cerr << "Failed to load config.env" << std::endl;
+    // Load configuration using structured bindings (C++17)
+    auto [error, count] = dotenv::load("config.env");
+    if (error != dotenv::dotenv_error::success) {
+        std::cerr << "Failed to load config.env (error: "
+                  << static_cast<int>(error) << ")\n";
         return 1;
     }
 
     // Mostrar configurações carregadas
-    std::cout << "Project: " << dotenv::get("PROJECT_NAME", "Unknown")
-              << std::endl;
-    std::cout << "Build Type: " << dotenv::get("BUILD_TYPE", "Debug")
-              << std::endl;
+    std::cout << "Loaded " << count << " variables\n";
+    std::cout << "Project: " << dotenv::get("PROJECT_NAME", "Unknown") << '\n';
+    std::cout << "Build Type: " << dotenv::get("BUILD_TYPE", "Debug") << '\n';
     std::cout << "Target Arch: " << dotenv::get("TARGET_ARCH", "unknown")
-              << std::endl;
+              << '\n';
 
     // Configurações booleanas
     bool warnings = dotenv::get("ENABLE_WARNINGS", "false") == "true";
-    std::cout << "Warnings: " << (warnings ? "enabled" : "disabled")
-              << std::endl;
+    std::cout << "Warnings: " << (warnings ? "enabled" : "disabled") << '\n';
 
     // Configurações numéricas
-    auto opt_level = dotenv::get<int>("OPTIMIZATION_LEVEL", 0);
-    std::cout << "Optimization Level: " << opt_level << std::endl;
+    const int default_opt_level = 0;
+    auto opt_level =
+        dotenv::value_or<int>("OPTIMIZATION_LEVEL", default_opt_level);
+    std::cout << "Optimization Level: " << opt_level << '\n';
 
-    std::cout << "CMake integration working correctly!" << std::endl;
+    std::cout << "CMake integration working correctly!\n";
     return 0;
 }

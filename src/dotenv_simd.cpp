@@ -1,4 +1,5 @@
 #include "dotenv_simd.hpp"
+#include <bit>
 
 #ifdef DOTENV_SIMD_ENABLED
 
@@ -33,19 +34,21 @@ auto count_lines_avx2(std::string_view content,
 
         __m256i mem;
         if (chunk_size == AVX2_VECTOR_SIZE) {
-            std::memcpy(&mem, content.data() + i, AVX2_VECTOR_SIZE);
+            [[likely]];
+            mem = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i *>(content.data() + i));
         } else {
-            // Handle partial chunk at end
             alignas(AVX2_ALIGNMENT) std::array<char, AVX2_VECTOR_SIZE> buffer{};
             std::memcpy(buffer.data(), content.data() + i, chunk_size);
-            std::memcpy(&mem, buffer.data(), AVX2_VECTOR_SIZE);
+            mem = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i *>(buffer.data()));
         }
 
         const auto cmp = _mm256_cmpeq_epi8(mem, line_feed);
         const auto mask = static_cast<unsigned int>(_mm256_movemask_epi8(cmp));
 
         if (mask != 0) {
-            line_count += static_cast<size_t>(__builtin_popcount(mask));
+            line_count += static_cast<size_t>(std::popcount(mask));
         }
     }
 

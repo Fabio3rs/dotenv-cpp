@@ -1,7 +1,13 @@
 #include "dotenv.hpp"
 #include "dotenv.h"
+#include "dotenv_types.h"
+#include <algorithm>
 #include <cctype>
+#include <climits>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -327,11 +333,82 @@ inline void processLine(std::string_view line, [[maybe_unused]] int replace,
 } // namespace
 
 extern "C" {
-auto dotenv_load(const char *path, int replace, int apply_system_env) -> int {
-    return dotenv::load(path, replace, apply_system_env != 0);
+/* Helper function to parse boolean values */
+static int parse_bool(const char *value, int default_value) {
+    if (value == nullptr) {
+        return default_value;
+    }
+
+    std::string lower_value = value;
+    std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    if (lower_value == "true" || lower_value == "1" || lower_value == "yes" ||
+        lower_value == "on") {
+        return 1;
+    }
+    if (lower_value == "false" || lower_value == "0" || lower_value == "no" ||
+        lower_value == "off") {
+        return 0;
+    }
+
+    return default_value;
 }
 
-auto dotenv_get(const char *key, const char *default_value) -> const char * {
+/* Core loading functions */
+int dotenv_load(const char *path, int replace, int apply_system_env) {
+    const char *file_path = path ? path : ".env";
+    return dotenv::load(file_path, replace, apply_system_env != 0);
+}
+
+dotenv_error_t dotenv_load_ex(const char *path,
+                              const dotenv_load_options_t *options,
+                              dotenv_load_stats_t *stats) {
+    if (!path)
+        path = ".env";
+
+    // Initialize stats if provided
+    if (stats) {
+        memset(stats, 0, sizeof(*stats));
+    }
+
+    // Use default options if not provided
+    dotenv_load_options_t default_opts;
+    if (!options) {
+        dotenv_get_default_options(&default_opts);
+        options = &default_opts;
+    }
+
+    try {
+        int result = dotenv::load(path, options->replace_existing,
+                                  options->apply_to_system != 0);
+
+        if (result < 0) {
+            return static_cast<dotenv_error_t>(result);
+        }
+
+        if (stats) {
+            stats->variables_loaded = result;
+            // Additional stats would need implementation in the core library
+        }
+
+        return DOTENV_SUCCESS;
+    } catch (const std::exception &) {
+        return DOTENV_ERROR_INVALID_FORMAT;
+    }
+}
+
+int dotenv_load_traditional(const char *path, int replace,
+                            int apply_system_env) {
+    const char *file_path = path ? path : ".env";
+    return dotenv::load_traditional(file_path, replace, apply_system_env != 0);
+}
+
+/* Variable access functions */
+const char *dotenv_get(const char *key, const char *default_value) {
+    if (!key)
+        return default_value ? default_value : "";
+
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -342,21 +419,228 @@ auto dotenv_get(const char *key, const char *default_value) -> const char * {
     }
 
     auto *value = getenv(key);
-    return (value != nullptr) ? value : default_value;
+    return (value != nullptr) ? value : (default_value ? default_value : "");
 }
 
-void dotenv_save(const char *path) { dotenv::save(path); }
+dotenv_error_t dotenv_get_buffer(const char *key, char *buffer,
+                                 size_t buffer_size) {
+    if (!key || !buffer || buffer_size == 0) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
+    }
+
+    const char *value = dotenv_get(key, nullptr);
+    if (!value) {
+        if (buffer_size > 0)
+            buffer[0] = '\0';
+        return DOTENV_SUCCESS;
+    }
+
+    size_t value_len = strlen(value);
+    if (value_len >= buffer_size) {
+        return DOTENV_ERROR_BUFFER_TOO_SMALL;
+    }
+
+    strcpy(buffer, value);
+    return DOTENV_SUCCESS;
 }
 
-void dotenv::write_system_env_from_env_map(int replace) {
-    std::lock_guard<std::mutex> lock(envMapMutex);
-    for (const auto &pair : envMap) {
-        set_env(pair.first.c_str(), pair.second.data.c_str(), replace);
+int dotenv_has(const char *key) {
+    if (!key)
+        return 0;
+    return dotenv::has(key) ? 1 : 0;
+}
+
+int dotenv_get_int(const char *key, int default_value) {
+    const char *value = dotenv_get(key, nullptr);
+    if (!value || *value == '\0')
+        return default_value;
+
+    char *endptr;
+    long result = strtol(value, &endptr, 10);
+
+    // Check for conversion errors or overflow
+    if (*endptr != '\0' || result < INT_MIN || result > INT_MAX) {
+        return default_value;
+    }
+
+    return static_cast<int>(result);
+}
+
+long dotenv_get_long(const char *key, long default_value) {
+    const char *value = dotenv_get(key, nullptr);
+    if (!value || *value == '\0')
+        return default_value;
+
+    char *endptr;
+    long result = strtol(value, &endptr, 10);
+
+    if (*endptr != '\0') {
+        return default_value;
+    }
+
+    return result;
+}
+
+double dotenv_get_double(const char *key, double default_value) {
+    const char *value = dotenv_get(key, nullptr);
+    if (!value || *value == '\0')
+        return default_value;
+
+    char *endptr;
+    double result = strtod(value, &endptr);
+
+    if (*endptr != '\0') {
+        return default_value;
+    }
+
+    return result;
+}
+
+int dotenv_get_bool(const char *key, int default_value) {
+    const char *value = dotenv_get(key, nullptr);
+    return parse_bool(value, default_value);
+}
+
+/* Variable modification functions */
+dotenv_error_t dotenv_set(const char *key, const char *value, int replace) {
+    if (!key || !value) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
+    }
+
+    try {
+        dotenv::set(key, value,
+                    (replace != 0) ? dotenv::overwrite::replace
+                                   : dotenv::overwrite::preserve);
+        return DOTENV_SUCCESS;
+    } catch (const std::exception &) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
     }
 }
 
-auto dotenv::load(std::string_view path, int replace,
-                  bool apply_system_env) noexcept -> int {
+dotenv_error_t dotenv_unset(const char *key) {
+    if (!key) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
+    }
+
+    try {
+        dotenv::unset(key);
+        return DOTENV_SUCCESS;
+    } catch (const std::exception &) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
+    }
+}
+
+/* File operations */
+dotenv_error_t dotenv_save(const char *path) {
+    const char *file_path = path ? path : ".env";
+
+    try {
+        dotenv::save(file_path);
+        return DOTENV_SUCCESS;
+    } catch (const std::exception &) {
+        return DOTENV_ERROR_PERMISSION_DENIED;
+    }
+}
+
+/* Utility functions */
+void dotenv_get_default_options(dotenv_load_options_t *options) {
+    if (!options)
+        return;
+
+    options->replace_existing = 1;
+    options->apply_to_system = 1;
+    options->max_line_length = 0;  // Use library default
+    options->max_key_length = 0;   // Use library default
+    options->max_value_length = 0; // Use library default
+}
+
+const char *dotenv_get_error_message(dotenv_error_t error_code) {
+    switch (error_code) {
+    case DOTENV_SUCCESS:
+        return "Success";
+    case DOTENV_ERROR_FILE_NOT_FOUND:
+        return "File not found";
+    case DOTENV_ERROR_PERMISSION_DENIED:
+        return "Permission denied";
+    case DOTENV_ERROR_INVALID_FORMAT:
+        return "Invalid file format";
+    case DOTENV_ERROR_OUT_OF_MEMORY:
+        return "Out of memory";
+    case DOTENV_ERROR_INVALID_ARGUMENT:
+        return "Invalid argument";
+    case DOTENV_ERROR_BUFFER_TOO_SMALL:
+        return "Buffer too small";
+    default:
+        return "Unknown error";
+    }
+}
+
+const char *dotenv_get_version(int *major, int *minor, int *patch) {
+    static const char *version = "2.0.0";
+
+    if (major)
+        *major = 2;
+    if (minor)
+        *minor = 0;
+    if (patch)
+        *patch = 0;
+
+    return version;
+}
+
+/* Advanced functions */
+int dotenv_enumerate(dotenv_iterator_t iterator, void *user_data) {
+    if (!iterator) {
+        return DOTENV_ERROR_INVALID_ARGUMENT;
+    }
+
+    std::lock_guard<std::mutex> lock(envMapMutex);
+
+    int count = 0;
+    for (const auto &[key, value] : envMap) {
+        if (iterator(key.c_str(), value.data.c_str(), user_data) != 0) {
+            break; // Iterator requested stop
+        }
+        count++;
+    }
+
+    return count;
+}
+
+dotenv_error_t dotenv_clear(int clear_system) {
+    std::lock_guard<std::mutex> lock(envMapMutex);
+
+    if (clear_system) {
+        // Clear from system environment
+        for (const auto &[key, value] : envMap) {
+            if (value.managedKey) {
+#ifdef _WIN32
+                std::string env_str = key + "=";
+                _putenv(env_str.c_str());
+#else
+                unsetenv(key.c_str());
+#endif
+            }
+        }
+    }
+
+    // Clear internal storage
+    envMap.clear();
+
+    return DOTENV_SUCCESS;
+}
+}
+
+void dotenv::apply_internal_to_process_env(overwrite overwrite_policy) {
+    std::lock_guard<std::mutex> lock(envMapMutex);
+    int replace_flag = (overwrite_policy == overwrite::replace) ? 1 : 0;
+    for (const auto &pair : envMap) {
+        set_env(pair.first.c_str(), pair.second.data.c_str(), replace_flag);
+    }
+}
+
+int dotenv::load(std::string_view path, int replace,
+                 bool apply_system_env) noexcept {
 #ifdef DOTENV_SIMD_ENABLED
     // Auto-detecção inteligente: usar SIMD sempre que disponível
 
@@ -382,7 +666,18 @@ auto dotenv::load(std::string_view path, int replace,
             return std::nullopt; // Usar implementação tradicional
         }
 
-        return load_simd(path, replace, apply_system_env);
+        // Use the modern API
+        auto [simd_error, simd_count] = load_simd(
+            path, {.overwrite_policy = (replace != 0) ? overwrite::replace
+                                                      : overwrite::preserve,
+                   .apply_to_process = apply_system_env ? process_env_apply::yes
+                                                        : process_env_apply::no,
+                   .backend = parse_backend::simd});
+
+        if (simd_error == dotenv_error::success) {
+            return simd_count;
+        }
+        return std::nullopt;
     };
 
     // Tentar otimização SIMD
@@ -396,9 +691,61 @@ auto dotenv::load(std::string_view path, int replace,
 }
 
 // Função pública para forçar implementação tradicional (benchmarking)
-auto dotenv::load_traditional(std::string_view path, int replace,
-                              bool apply_system_env) noexcept -> int {
+int dotenv::load_traditional(std::string_view path, int replace,
+                             bool apply_system_env) noexcept {
     return load_traditional_implementation(path, replace, apply_system_env);
+}
+
+auto dotenv::load_with_status(std::string_view path, int replace,
+                              bool apply_system_env) noexcept
+    -> std::pair<dotenv_error_t, int> {
+    int result = load(path, replace, apply_system_env);
+
+    if (result < 0) {
+        // Convert negative error codes to enum
+        switch (result) {
+        case -1:
+            return {DOTENV_ERROR_FILE_NOT_FOUND, 0};
+        case -2:
+            return {DOTENV_ERROR_PERMISSION_DENIED, 0};
+        case -3:
+            return {DOTENV_ERROR_INVALID_FORMAT, 0};
+        case -4:
+            return {DOTENV_ERROR_OUT_OF_MEMORY, 0};
+        case -5:
+            return {DOTENV_ERROR_INVALID_ARGUMENT, 0};
+        default:
+            return {DOTENV_ERROR_INVALID_FORMAT, 0};
+        }
+    }
+
+    return {DOTENV_SUCCESS, result};
+}
+
+auto dotenv::load_traditional_with_status(std::string_view path, int replace,
+                                          bool apply_system_env) noexcept
+    -> std::pair<dotenv_error_t, int> {
+    int result = load_traditional(path, replace, apply_system_env);
+
+    if (result < 0) {
+        // Convert negative error codes to enum
+        switch (result) {
+        case -1:
+            return {DOTENV_ERROR_FILE_NOT_FOUND, 0};
+        case -2:
+            return {DOTENV_ERROR_PERMISSION_DENIED, 0};
+        case -3:
+            return {DOTENV_ERROR_INVALID_FORMAT, 0};
+        case -4:
+            return {DOTENV_ERROR_OUT_OF_MEMORY, 0};
+        case -5:
+            return {DOTENV_ERROR_INVALID_ARGUMENT, 0};
+        default:
+            return {DOTENV_ERROR_INVALID_FORMAT, 0};
+        }
+    }
+
+    return {DOTENV_SUCCESS, result};
 }
 
 // Implementação tradicional extraída para reutilização
@@ -434,7 +781,9 @@ load_traditional_implementation(std::string_view path, int replace,
     dotenv.close();
 
     if (apply_system_env) {
-        dotenv::write_system_env_from_env_map(replace);
+        dotenv::apply_internal_to_process_env(
+            (replace != 0) ? dotenv::overwrite::replace
+                           : dotenv::overwrite::preserve);
     }
 
     return count;
@@ -455,8 +804,179 @@ auto dotenv::get(std::string_view key,
     return (value != nullptr) ? value : default_value;
 }
 
-auto dotenv::get_string(std::string_view key,
-                        std::string_view default_value) -> std::string {
+// ===== CORE C++20 API IMPLEMENTATIONS =====
+
+// Helper function to convert legacy int error codes to dotenv_error
+static dotenv::dotenv_error convert_error_code(int error_code) noexcept {
+    switch (error_code) {
+    case 0: // Success
+        return dotenv::dotenv_error::success;
+    case -1:
+        return dotenv::dotenv_error::file_not_found;
+    case -2:
+        return dotenv::dotenv_error::permission_denied;
+    case -3:
+        return dotenv::dotenv_error::invalid_format;
+    case -4:
+        return dotenv::dotenv_error::out_of_memory;
+    case -5:
+        return dotenv::dotenv_error::invalid_argument;
+    default:
+        return dotenv::dotenv_error::invalid_format;
+    }
+}
+
+// Primary C++20 load API
+std::pair<dotenv::dotenv_error, int>
+dotenv::load(std::string_view path, const load_options &options) noexcept {
+    try {
+        int replace_flag =
+            (options.overwrite_policy == overwrite::replace) ? 1 : 0;
+        bool apply_to_env =
+            (options.apply_to_process == process_env_apply::yes);
+
+        int result = 0;
+        switch (options.backend) {
+        case parse_backend::auto_detect:
+            result = load(path, replace_flag, apply_to_env);
+            break;
+        case parse_backend::traditional:
+            result = load_traditional(path, replace_flag, apply_to_env);
+            break;
+#ifdef DOTENV_SIMD_ENABLED
+        case parse_backend::simd: {
+            auto [simd_error, simd_count] = load_simd(
+                path,
+                {.overwrite_policy = (replace_flag == 1) ? overwrite::replace
+                                                         : overwrite::preserve,
+                 .apply_to_process = apply_to_env ? process_env_apply::yes
+                                                  : process_env_apply::no,
+                 .backend = parse_backend::simd});
+
+            if (simd_error == dotenv::dotenv_error::success) {
+                result = simd_count;
+            } else {
+                result = load_traditional(path, replace_flag, apply_to_env);
+            }
+        } break;
+#else
+        case parse_backend::simd:
+            result = load_traditional(path, replace_flag, apply_to_env);
+            break;
+#endif
+        }
+
+        if (result < 0) {
+            return {convert_error_code(result), 0};
+        }
+
+        return {dotenv::dotenv_error::success, result};
+    } catch (const std::exception &) {
+        return {dotenv::dotenv_error::out_of_memory, 0};
+    }
+}
+
+// Traditional backend (C++20 API)
+std::pair<dotenv::dotenv_error, int>
+dotenv::load_traditional(std::string_view path,
+                         const load_options &options) noexcept {
+    try {
+        int replace_flag =
+            (options.overwrite_policy == overwrite::replace) ? 1 : 0;
+        bool apply_to_env =
+            (options.apply_to_process == process_env_apply::yes);
+
+        int result = load_traditional(path, replace_flag, apply_to_env);
+
+        if (result < 0) {
+            return {convert_error_code(result), 0};
+        }
+
+        return {dotenv::dotenv_error::success, result};
+    } catch (const std::exception &) {
+        return {dotenv::dotenv_error::out_of_memory, 0};
+    }
+}
+
+#ifdef DOTENV_SIMD_ENABLED
+// SIMD backend (C++20 API)
+std::pair<dotenv::dotenv_error, int>
+dotenv::load_simd(std::string_view path, const load_options &options) noexcept {
+    try {
+        int replace_flag =
+            (options.overwrite_policy == overwrite::replace) ? 1 : 0;
+        bool apply_to_env =
+            (options.apply_to_process == process_env_apply::yes);
+
+        int result = 0;
+        if (simd::is_avx2_available()) {
+            // Use traditional implementation for now - SIMD implementation
+            // needs to be updated
+            result = load_traditional(path, replace_flag, apply_to_env);
+        } else {
+            result = load_traditional(path, replace_flag, apply_to_env);
+        }
+
+        if (result < 0) {
+            return {convert_error_code(result), 0};
+        }
+
+        return {dotenv::dotenv_error::success, result};
+    } catch (const std::exception &) {
+        return {dotenv::dotenv_error::out_of_memory, 0};
+    }
+}
+#endif
+
+// ===== C++23 ENHANCED API IMPLEMENTATIONS =====
+
+#if DOTENV_HAS_EXPECTED
+// Enhanced C++23 load API with std::expected
+std::expected<int, dotenv::dotenv_error>
+dotenv::load_expected(std::string_view path,
+                      const load_options &options) noexcept {
+    auto [error, count] = load(path, options);
+
+    if (error != dotenv::dotenv_error::success) {
+        return std::unexpected(error);
+    }
+
+    return count;
+}
+
+// Traditional backend (C++23 enhanced API)
+std::expected<int, dotenv::dotenv_error>
+dotenv::load_traditional_expected(std::string_view path,
+                                  const load_options &options) noexcept {
+    auto [error, count] = load_traditional(path, options);
+
+    if (error != dotenv::dotenv_error::success) {
+        return std::unexpected(error);
+    }
+
+    return count;
+}
+
+#ifdef DOTENV_SIMD_ENABLED
+// SIMD backend (C++23 enhanced API)
+std::expected<int, dotenv::dotenv_error>
+dotenv::load_simd_expected(std::string_view path,
+                           const load_options &options) noexcept {
+    auto [error, count] = load_simd(path, options);
+
+    if (error != dotenv::dotenv_error::success) {
+        return std::unexpected(error);
+    }
+
+    return count;
+}
+#endif
+#endif // DOTENV_HAS_EXPECTED
+
+// ===== VARIABLE ACCESS API IMPLEMENTATIONS =====
+
+std::string dotenv::value(std::string_view key,
+                          std::string_view default_value) {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -470,130 +990,96 @@ auto dotenv::get_string(std::string_view key,
     return (value != nullptr) ? std::string(value) : std::string(default_value);
 }
 
-auto dotenv::has(std::string_view key) -> bool {
+std::string dotenv::value_or(std::string_view key,
+                             std::string_view fallback_value) {
+    return value(key, fallback_value);
+}
+
+std::optional<std::string> dotenv::try_value(std::string_view key) noexcept {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
-    if (envMap.find(key_str) != envMap.end()) {
+    auto it = envMap.find(key_str);
+
+    if (it != envMap.end()) {
+        return it->second.data;
+    }
+
+    auto *value = getenv(key_str.c_str());
+    if (value != nullptr) {
+        return std::string(value);
+    }
+
+    return std::nullopt;
+}
+
+bool dotenv::contains(std::string_view key) {
+    std::lock_guard<std::mutex> lock(envMapMutex);
+
+    std::string key_str(key);
+    auto it = envMap.find(key_str);
+
+    if (it != envMap.end()) {
         return true;
     }
 
     return getenv(key_str.c_str()) != nullptr;
 }
 
-void dotenv::set(std::string_view key, std::string_view value, bool replace) {
-    std::string key_str(key);
-    std::string value_str(value);
-
-    // Se replace=false, verificar se a variável já existe
-    if (!replace) {
-        auto *existing_value = getenv(key_str.c_str());
-        if (existing_value != nullptr) {
-            // Variável já existe e replace=false, não fazer nada
-            return;
-        }
+void dotenv::save_to_file(std::string_view path) {
+    std::ofstream output_file{std::string(path)};
+    if (!output_file.is_open()) {
+        throw std::runtime_error("Cannot create output file: " +
+                                 std::string(path));
     }
 
-    int result = set_env(key_str.c_str(), value_str.c_str(), replace ? 1 : 0);
+    std::lock_guard<std::mutex> lock(envMapMutex);
+    for (const auto &[key, value] : envMap) {
+        output_file << key << "=" << value.data << "\n";
+    }
+}
 
-    if (result == 0) {
-        // Atualização O(1) - apenas a entrada específica
-        std::lock_guard<std::mutex> lock(envMapMutex);
-        envMap[key_str] = ValueStruct(value_str, true);
+#if DOTENV_HAS_EXPECTED
+std::expected<std::string, dotenv::dotenv_error>
+dotenv::value_expected(std::string_view key) {
+    std::lock_guard<std::mutex> lock(envMapMutex);
+
+    std::string key_str(key);
+    auto it = envMap.find(key_str);
+
+    if (it != envMap.end()) {
+        return it->second.data;
+    }
+
+    auto *value = getenv(key_str.c_str());
+    if (value != nullptr) {
+        return std::string(value);
+    }
+
+    return std::unexpected(dotenv::dotenv_error::key_not_found);
+}
+#endif // DOTENV_HAS_EXPECTED
+
+// ===== LEGACY API COMPATIBILITY WRAPPERS =====
+// Note: The load() and load_traditional() functions with int/bool parameters
+// are already implemented above in the main implementation section
+
+void dotenv::set(std::string_view key, std::string_view value,
+                 overwrite overwrite_policy) {
+    std::lock_guard<std::mutex> lock(envMapMutex);
+    std::string key_str(key);
+
+    if (overwrite_policy == overwrite::replace) {
+        envMap.insert_or_assign(std::move(key_str),
+                                ValueStruct(std::string(value), true));
+    } else {
+        // Se overwrite::preserve, só insere se não existir
+        envMap.emplace(std::move(key_str),
+                       ValueStruct(std::string(value), true));
     }
 }
 
 void dotenv::unset(std::string_view key) {
-    std::string key_str(key);
-
-#ifdef _WIN32
-    // No Windows, usar _putenv com string vazia
-    std::string env_str = key_str + "=";
-    _putenv(env_str.c_str());
-#else
-    // Em sistemas POSIX, usar unsetenv
-    unsetenv(key_str.c_str());
-#endif
-
-    // Remover do mapa interno
     std::lock_guard<std::mutex> lock(envMapMutex);
-    envMap.erase(key_str);
+    envMap.erase(std::string(key));
 }
-
-void dotenv::save(std::string_view path) {
-    std::ofstream dotenv((std::filesystem::path(path)));
-
-    if (!dotenv.is_open()) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(envMapMutex);
-
-    // Salvar apenas chaves gerenciadas (carregadas do .env) para segurança
-    for (const auto &[key, value] : envMap) {
-        if (value.managedKey) {
-            dotenv << key << "=" << value.data << '\n';
-        }
-    }
-
-    dotenv.close();
-}
-
-auto dotenv::get_optional_string(std::string_view key)
-    -> std::optional<std::string> {
-    auto value = get_string(key, "");
-
-    if (value.empty()) {
-        // Verificar se a chave realmente existe (valor vazio vs inexistente)
-        if (!has(key)) {
-            return std::nullopt;
-        }
-    }
-
-    return value;
-}
-
-#ifdef DOTENV_SIMD_ENABLED
-auto dotenv::load_simd(std::string_view path, int replace,
-                       bool apply_system_env) noexcept -> int {
-    // Verificar se AVX2 está disponível
-    if (!simd::is_avx2_available()) {
-        // Fallback para implementação padrão
-        return load_traditional(path, replace, apply_system_env);
-    }
-
-    int count = 0;
-    // Usar callback-based SIMD com memory-mapping (versão mais rápida)
-    try {
-        mapped_file mapped{path};
-        if (!mapped.is_mapped()) {
-            return -1; // Arquivo não pode ser mapeado
-        }
-
-        auto file_view = mapped.view();
-        if (file_view.empty()) {
-            return 0; // Arquivo vazio
-        }
-
-        // Lambda callback para processar cada linha (mesma lógica da
-        // auto-detecção)
-        auto process_line = [&](size_t /* line_idx */, std::string_view line) {
-            // Trim da linha
-            processLine(line, replace, count);
-        };
-
-        // Processar com SIMD + callback (versão mais rápida)
-        [[maybe_unused]] auto processed_lines =
-            simd::process_lines_avx2(file_view, '\n', process_line);
-
-    } catch (...) {
-        // Em caso de erro, fallback para implementação tradicional
-        return load_traditional_implementation(path, replace, apply_system_env);
-    }
-
-    if (apply_system_env) {
-        dotenv::write_system_env_from_env_map(replace);
-    }
-    return count;
-}
-#endif

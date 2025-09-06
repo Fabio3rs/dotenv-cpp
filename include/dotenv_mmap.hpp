@@ -75,7 +75,7 @@ class mapped_file {
      * @return string_view of entire file content
      */
     [[nodiscard]] std::string_view view() const noexcept {
-        if (data_ && size_ > 0) {
+        if ((data_ != nullptr) && size_ > 0) {
             return std::string_view(static_cast<const char *>(data_), size_);
         }
         return {};

@@ -24,24 +24,75 @@ A high-performance, thread-safe C++20 library for managing `.env` files. The lib
 
 ### Using Conan
 
-***Note:*** *This method is not available yet. The package will be published to Conan Center once the library is stable.*
-You can integrate `dotenv` into your project using Conan:
+#### Option 1: Local Package (Recommended for now)
 
-1. Add `dotenv` to your `conanfile.txt`:
-   ```plaintext
-   [requires]
-   dotenv/0.1
+Since the package is not yet published to Conan Center, you can build and use it locally:
+
+1. **Create local package:**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/Fabio3rs/dotenv-cpp.git
+   cd dotenv-cpp
+
+   # Create local Conan package
+   conan create . --build=missing
    ```
 
-2. Install the dependencies:
+2. **Use in your project's `conanfile.txt`:**
+   ```plaintext
+   [requires]
+   dotenv/2.0.0
+
+   [generators]
+   CMakeDeps
+   CMakeToolchain
+   ```
+
+3. **Install and link in your project:**
    ```bash
+   # In your project directory
    conan install . --output-folder=build --build=missing
    ```
 
-3. Link the library in your `CMakeLists.txt`:
+4. **CMakeLists.txt integration:**
    ```cmake
+   cmake_minimum_required(VERSION 3.15)
+   project(my_project)
+
    find_package(dotenv REQUIRED)
+
+   add_executable(my_project main.cpp)
    target_link_libraries(my_project PRIVATE dotenv::dotenv_lib)
+   target_compile_features(my_project PRIVATE cxx_std_20)
+   ```
+
+#### Option 2: Remote Repository (Advanced)
+
+For team/organization use, you can add the package to a custom Conan remote:
+
+1. **Create and upload to remote:**
+   ```bash
+   # Add your remote (replace with your Artifactory/remote URL)
+   conan remote add my-remote https://my-artifactory.com/artifactory/api/conan/my-repo
+
+   # Create and upload package
+   conan create . --build=missing
+   conan upload dotenv/2.0.0 -r my-remote --all
+   ```
+
+2. **Use from remote:**
+   ```bash
+   # Team members can install from remote
+   conan install dotenv/2.0.0@ --build=missing -r my-remote
+   ```
+
+#### Option 3: From Conan Center (Future)
+
+***Note:*** *This method will be available once the package is published to Conan Center.*
+
+   ```plaintext
+   [requires]
+   dotenv/2.0.0
    ```
 
 ### Manual Integration
@@ -54,6 +105,42 @@ You can integrate `dotenv` into your project using Conan:
 2. Include the `include` directory in your project's include paths.
 
 3. Add the `src` files to your build system.
+
+---
+
+## Conan Package Options
+
+When using Conan, you can customize the build with these options:
+
+```bash
+# Basic usage
+conan create . --build=missing
+
+# Enable tests and benchmarks
+conan create . -o enable_tests=True -o enable_benchmarks=True --build=missing
+
+# Build as shared library
+conan create . -o shared=True --build=missing
+
+# Debug build with sanitizers
+conan create . -s build_type=Debug -o enable_sanitizers=True --build=missing
+```
+
+### Available Options:
+- `shared`: Build as shared library (default: False)
+- `fPIC`: Position independent code (default: True)
+- `enable_tests`: Build and run tests (default: False)
+- `enable_benchmarks`: Build benchmarks (default: False)
+- `enable_sanitizers`: Enable AddressSanitizer and UBSan (default: False)
+
+### Complete Example
+
+For a complete working example using Conan, see [`examples/conan_usage/`](examples/conan_usage/).
+
+### Additional Documentation
+
+- 📋 **[Platform Compatibility Matrix](docs/COMPATIBILITY.md)** - Detailed compiler and platform support
+- 🔒 **[Security Guide](docs/SECURITY.md)** - Comprehensive security considerations and best practices
 
 ---
 
@@ -112,11 +199,80 @@ int main() {
 
 ### C++ API (`dotenv.hpp`)
 
+#### Basic Loading Functions
+
 - **`int dotenv::load(std::string_view path = ".env", int replace = 1, bool apply_system_env = true)`**
   Loads the environment variables from the specified `.env` file.
   - `path`: Path to the `.env` file (default: `.env`).
   - `replace`: Replace existing variables (default: `1`).
   - `apply_system_env`: Whether to apply variables to system environment via setenv() (default: `true`). When `false`, variables are only stored internally.
+  - Returns: Number of variables loaded, or negative error code.
+
+- **`int dotenv::load_traditional(std::string_view path, int replace, bool apply_system_env)`**
+  Forces traditional implementation (no SIMD optimization).
+
+#### Enhanced Error Handling (C++20/C++23)
+
+**C++20 - Structured Bindings with std::pair:**
+- **`std::pair<dotenv_error_t, int> dotenv::load_with_status(path, replace, apply_system_env)`**
+  Loads variables with detailed error information.
+  - Returns: `{status_code, variables_loaded}` where status is from `dotenv_error_t` enum.
+  - Example:
+    ```cpp
+    auto [status, count] = dotenv::load_with_status(".env");
+    if (status == DOTENV_SUCCESS) {
+        std::cout << "Loaded " << count << " variables\n";
+    } else {
+        std::cout << "Error: " << dotenv_get_error_message(status) << "\n";
+    }
+    ```
+
+- **`std::pair<dotenv_error_t, int> dotenv::load_traditional_with_status(...)`**
+  Traditional implementation with detailed status.
+
+- **`std::pair<dotenv_error_t, int> dotenv::load_simd_with_status(...)`** (if SIMD enabled)
+  SIMD implementation with detailed status.
+
+**C++23 - Modern std::expected (Recommended):**
+- **`std::expected<int, dotenv_error_t> dotenv::load_expected(path, replace, apply_system_env)`**
+  Modern error handling using std::expected.
+  - Returns: Expected containing variable count, or unexpected containing error code.
+  - Example:
+    ```cpp
+    auto result = dotenv::load_expected(".env");
+    if (result) {
+        std::cout << "Loaded " << *result << " variables\n";
+    } else {
+        std::cout << "Error: " << dotenv_get_error_message(result.error()) << "\n";
+    }
+
+    // Monadic operations
+    auto config = dotenv::load_expected(".env")
+        .and_then([](int count) { return process_config(count); })
+        .or_else([](auto error) { return use_defaults(error); });
+    ```
+
+- **`std::expected<int, dotenv_error_t> dotenv::load_traditional_expected(...)`**
+  Traditional implementation with std::expected.
+
+- **`std::expected<int, dotenv_error_t> dotenv::load_simd_expected(...)`** (if SIMD enabled)
+  SIMD implementation with std::expected.
+
+#### Error Codes (`dotenv_errors.h`)
+
+```cpp
+typedef enum {
+    DOTENV_SUCCESS = 0,                    // Operation successful
+    DOTENV_ERROR_FILE_NOT_FOUND = -1,      // .env file not found
+    DOTENV_ERROR_PERMISSION_DENIED = -2,   // Permission denied
+    DOTENV_ERROR_INVALID_FORMAT = -3,      // Invalid file format
+    DOTENV_ERROR_OUT_OF_MEMORY = -4,       // Insufficient memory
+    DOTENV_ERROR_INVALID_ARGUMENT = -5,    // Invalid argument
+    DOTENV_ERROR_BUFFER_TOO_SMALL = -6     // Buffer too small
+} dotenv_error_t;
+```
+
+#### Variable Access Functions
 
 - **`std::string_view dotenv::get(std::string_view key, std::string_view default_value = "")`**
   Retrieves the value of the given key or a default value if the key doesn't exist.
@@ -143,12 +299,132 @@ int main() {
 
 ---
 
+## Platform Support
+
+### Tested Compiler Matrix
+
+| Compiler | Version | Windows | Linux | macOS | Sanitizers | SIMD (AVX2) |
+|----------|---------|---------|-------|-------|------------|-------------|
+| **GCC** | 10+ | ❌ | ✅ | ❌ | ASan, UBSan, LSan | ✅ |
+| **GCC** | 11+ | ❌ | ✅ | ❌ | ASan, UBSan, LSan, TSan¹ | ✅ |
+| **Clang** | 12+ | ✅² | ✅ | ✅ | ASan, UBSan, LSan, MSan³ | ✅ |
+| **Clang** | 14+ | ✅² | ✅ | ✅ | Full suite⁴ | ✅ |
+| **MSVC** | 2019 (v142) | ✅ | ❌ | ❌ | ASan⁵ | ✅ |
+| **MSVC** | 2022 (v143) | ✅ | ❌ | ❌ | ASan⁵ | ✅ |
+
+**Notes:**
+1. TSan may have false positives on some threading patterns
+2. Requires Clang-cl or LLVM toolchain on Windows
+3. MSan requires special runtime and may need custom builds
+4. Includes implicit-conversion and unsigned-integer-overflow
+5. MSVC ASan has limited feature set compared to Clang/GCC
+
+### Operating System Specifics
+
+#### **Linux (Primary Target)**
+- **Kernel**: 4.0+ (for modern syscalls and security features)
+- **Distributions**: Ubuntu 20.04+, RHEL 8+, Debian 11+, Arch Linux
+- **Features**: Full feature set, all sanitizers, optimal performance
+- **Thread Safety**: Native pthread support
+
+#### **Windows 10/11**
+- **API Level**: Windows 10 1903+ (for Unicode environment handling)
+- **Features**: Full C++20 support, limited sanitizer support
+- **Unicode**: UTF-16 ↔ UTF-8 conversion for environment variables
+- **Thread Safety**: Windows CRT thread-safe functions
+
+#### **macOS**
+- **Version**: 10.15+ (Catalina, for C++20 library support)
+- **Xcode**: 12+ (for Clang 12+ with full C++20)
+- **Features**: Full feature set except some Clang-specific sanitizers
+- **Thread Safety**: Native pthread support
+
+---
+
+## Security Considerations
+
+### `apply_system_env` Parameter Semantics
+
+The `apply_system_env` parameter controls whether parsed variables are applied to the system environment via platform-specific APIs:
+
+#### **Behavior by Platform:**
+
+| Platform | `apply_system_env=true` | `apply_system_env=false` |
+|----------|------------------------|--------------------------|
+| **Linux/macOS** | Uses `setenv()` - affects child processes | Internal storage only |
+| **Windows** | Uses `_wputenv_s()` - affects child processes | Internal storage only |
+
+#### **Security Implications:**
+
+⚠️ **CRITICAL**: When `apply_system_env=true`, parsed variables **WILL OVERRIDE** existing system environment variables if `replace=1`.
+
+```cpp
+// ⚠️ SECURITY RISK: Can override sensitive system variables
+dotenv::load(".env", 1, true);  // replace=1, apply_system_env=true
+
+// ✅ SAFE: Only internal storage, won't affect system
+dotenv::load(".env", 1, false); // apply_system_env=false
+
+// ✅ SAFE: Won't override existing variables
+dotenv::load(".env", 0, true);  // replace=0, won't override existing
+```
+
+#### **Recommended Security Practices:**
+
+1. **Production Environments:**
+   ```cpp
+   // Load without affecting system environment
+   dotenv::load(".env", 1, false);
+
+   // Manually validate and apply critical variables
+   if (auto db_url = dotenv::get("DATABASE_URL"); !db_url.empty()) {
+       if (validate_database_url(db_url)) {
+           setenv("DATABASE_URL", db_url.data(), 1);
+       }
+   }
+   ```
+
+2. **Development Environments:**
+   ```cpp
+   // Safe for development, won't override existing
+   dotenv::load(".env", 0, true);
+   ```
+
+3. **Sensitive Variables Protection:**
+   ```cpp
+   // Protect critical system variables
+   const std::unordered_set<std::string> protected_vars = {
+       "PATH", "HOME", "USER", "SHELL", "PWD",
+       "SSH_AUTH_SOCK", "SUDO_USER", "TERM"
+   };
+
+   // Custom loading with protection
+   dotenv::load(".env", 1, false);  // Load internally first
+
+   for (const auto& [key, value] : get_all_loaded_vars()) {
+       if (protected_vars.find(key) == protected_vars.end()) {
+           setenv(key.c_str(), value.c_str(), 1);  // Only apply non-protected
+       }
+   }
+   ```
+
+#### **Thread Safety Notes:**
+
+- **Internal storage** (`apply_system_env=false`): Thread-safe with mutex protection
+- **System environment** (`apply_system_env=true`): Platform-dependent thread safety
+  - Linux/macOS: `setenv()` is generally thread-safe
+  - Windows: `_wputenv_s()` is thread-safe
+  - **Recommendation**: Avoid concurrent writes to system environment
+
+---
+
 ## Building from Source
 
 ### Requirements
 
-- A C++20-compliant compiler.
-- CMake 3.15 or later.
+- **C++20-compliant compiler** (see [Platform Support](#platform-support))
+- **CMake 3.15** or later
+- **Operating System**: Windows 10+, Linux (kernel 4.0+), macOS 10.15+
 
 ### Steps
 
@@ -169,6 +445,126 @@ int main() {
    ```bash
    ctest
    ```
+
+### Advanced Build Options
+
+#### **Sanitizer Builds (Recommended for Development)**
+
+```bash
+# Full sanitizer suite (Linux/macOS with Clang 14+)
+cmake .. -DCMAKE_BUILD_TYPE=Debug \
+         -DDOTENV_ENABLE_SANITIZERS=ON \
+         -DDOTENV_ENABLE_TESTS=ON
+
+# Specific sanitizers (if full suite causes issues)
+cmake .. -DCMAKE_BUILD_TYPE=Debug \
+         -DCMAKE_CXX_FLAGS="-fsanitize=address -fsanitize=undefined -g"
+
+# Windows MSVC with AddressSanitizer
+cmake .. -DCMAKE_BUILD_TYPE=Debug \
+         -DDOTENV_ENABLE_SANITIZERS=ON \
+         -T ClangCL  # Use Clang-CL for better sanitizer support
+```
+
+#### **Performance Builds**
+
+```bash
+# Maximum performance with SIMD
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DDOTENV_ENABLE_SIMD=ON
+
+# Benchmarking build
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DDOTENV_ENABLE_SIMD=ON \
+         -DDOTENV_ENABLE_BENCHMARKS=ON
+```
+
+#### **CI/Production Builds**
+
+```bash
+# Strict warnings-as-errors build
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DDOTENV_ENABLE_WERROR=ON \
+         -DDOTENV_ENABLE_TESTS=ON
+```
+
+### Compiler-Specific Notes
+
+#### **GCC Considerations**
+```bash
+# Minimum version check
+g++ --version  # Requires 10+
+
+# Recommended flags for development
+export CXXFLAGS="-Wall -Wextra -Wconversion -Wsign-conversion -g"
+```
+
+#### **Clang Considerations**
+```bash
+# Clang 12+ for full C++20 support
+clang++ --version
+
+# Enable all available sanitizers (Clang 14+)
+export CXXFLAGS="-fsanitize=address,undefined,implicit-conversion,unsigned-integer-overflow"
+```
+
+#### **MSVC Considerations**
+```bash
+# Visual Studio 2019 16.11+ or 2022
+# Use vcpkg for dependencies
+vcpkg install gtest:x64-windows benchmark:x64-windows
+
+# CMake with vcpkg toolchain
+cmake .. -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+---
+
+## Troubleshooting
+
+### Common Build Issues
+
+#### **C++20 Support**
+```bash
+# Error: "C++20 features not available"
+# Solution: Update compiler or use older standard
+cmake .. -DCMAKE_CXX_STANDARD=17  # Fallback to C++17 if needed
+```
+
+#### **AVX2 Not Available**
+```bash
+# Warning: "AVX2 not supported by compiler"
+# Solution: Disable SIMD optimizations
+cmake .. -DDOTENV_ENABLE_SIMD=OFF
+```
+
+#### **Sanitizer Conflicts**
+```bash
+# Error: Multiple sanitizers conflict
+# Solution: Use compatible combinations
+cmake .. -DCMAKE_CXX_FLAGS="-fsanitize=address"  # AddressSanitizer only
+```
+
+#### **Windows Unicode Issues**
+```cpp
+// Problem: Environment variables with non-ASCII characters
+// Solution: Ensure UTF-8 encoding in .env files
+// The library automatically handles UTF-16 ↔ UTF-8 conversion
+```
+
+### Performance Troubleshooting
+
+#### **Slow Load Times**
+- **Check file size**: SIMD auto-detection threshold is 50KB
+- **Verify SIMD**: Use `load_simd()` for large files if auto-detection fails
+- **Disable system env**: Use `apply_system_env=false` for pure parsing benchmarks
+
+#### **Memory Usage**
+- **Large files**: Consider streaming parser for files >100MB
+- **Many variables**: Monitor `ValueStruct` memory usage
+- **Thread contention**: Reduce concurrent writes to environment
+
+---
 
 ## Contributing
 
