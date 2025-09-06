@@ -37,8 +37,9 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ConcurrentReads)
         auto start = std::chrono::high_resolution_clock::now();
 
         // Criar threads que fazem leituras
+        threads.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t) {
-            threads.emplace_back([&, t]() {
+            threads.emplace_back([&]() {
                 for (int i = 0; i < 100; ++i) {
                     auto result =
                         dotenv::get(std::format("THREAD_VAR_{}", i % 100));
@@ -76,6 +77,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ConcurrentWrites)
         std::atomic<int> operations_completed{0};
 
         // Criar threads que fazem escritas
+        threads.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t) {
             threads.emplace_back([&, t]() {
                 for (int i = 0; i < 50; ++i) {
@@ -181,6 +183,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ContentionTest)
         std::atomic<int> operations_completed{0};
 
         // Todas as threads acessam a mesma chave
+        threads.reserve(num_threads);
         for (int t = 0; t < num_threads; ++t) {
             threads.emplace_back([&, t]() {
                 for (int i = 0; i < 100; ++i) {

@@ -25,13 +25,13 @@ class file_descriptor {
     }
 
     file_descriptor(const file_descriptor &) = delete;
-    file_descriptor &operator=(const file_descriptor &) = delete;
+    auto operator=(const file_descriptor &) -> file_descriptor & = delete;
 
     file_descriptor(file_descriptor &&other) noexcept : fd_(other.fd_) {
         other.fd_ = -1;
     }
 
-    file_descriptor &operator=(file_descriptor &&other) noexcept {
+    auto operator=(file_descriptor &&other) noexcept -> file_descriptor & {
         if (this != &other) {
             if (fd_ != -1) {
                 ::close(fd_);
@@ -42,9 +42,9 @@ class file_descriptor {
         return *this;
     }
 
-    [[nodiscard]] bool valid() const noexcept { return fd_ != -1; }
-    [[nodiscard]] int get() const noexcept { return fd_; }
-    [[nodiscard]] int release() noexcept {
+    [[nodiscard]] auto valid() const noexcept -> bool { return fd_ != -1; }
+    [[nodiscard]] auto get() const noexcept -> int { return fd_; }
+    [[nodiscard]] auto release() noexcept -> int {
         int tmp = fd_;
         fd_ = -1;
         return tmp;
@@ -83,7 +83,7 @@ mapped_file::mapped_file(mapped_file &&other) noexcept
     other.data_ = nullptr;
 }
 
-mapped_file &mapped_file::operator=(mapped_file &&other) noexcept {
+auto mapped_file::operator=(mapped_file &&other) noexcept -> mapped_file & {
     if (this == &other) {
         return *this;
     }
@@ -111,7 +111,7 @@ mapped_file &mapped_file::operator=(mapped_file &&other) noexcept {
 
 mapped_file::~mapped_file() noexcept { close_impl(); }
 
-bool mapped_file::map(std::string_view filename) {
+auto mapped_file::map(std::string_view filename) -> bool {
     close_impl();
 
 #ifdef _WIN32
@@ -189,11 +189,16 @@ bool mapped_file::map(std::string_view filename) {
         return true;
     }
 
-    data_ = ::mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, file_desc.get(), 0);
+    posix_fadvise(file_desc.get(), 0, 0, POSIX_FADV_WILLNEED);
+    posix_fadvise(file_desc.get(), 0, 0, POSIX_FADV_SEQUENTIAL);
+    data_ = ::mmap(nullptr, size_, PROT_READ, MAP_PRIVATE | MAP_POPULATE,
+                   file_desc.get(), 0);
     if (data_ == MAP_FAILED) {
         data_ = nullptr;
         return false;
     }
+
+    madvise(data_, size_, MADV_SEQUENTIAL);
 
     fd_ = file_desc.release(); // Take ownership
 #endif

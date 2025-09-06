@@ -32,7 +32,7 @@ static void BM_Traditional_Small(benchmark::State &bench_state) {
     generate_test_file(SMALL_FILE_LINES);
 
     for ([[maybe_unused]] auto iteration : bench_state) {
-        auto result = dotenv::load(test_file);
+        auto result = dotenv::load_traditional(test_file, 1, false);
         benchmark::DoNotOptimize(result);
     }
 
@@ -43,7 +43,7 @@ static void BM_Traditional_Large(benchmark::State &bench_state) {
     generate_test_file(LARGE_FILE_LINES);
 
     for ([[maybe_unused]] auto iteration : bench_state) {
-        auto result = dotenv::load(test_file);
+        auto result = dotenv::load_traditional(test_file, 1, false);
         benchmark::DoNotOptimize(result);
     }
 

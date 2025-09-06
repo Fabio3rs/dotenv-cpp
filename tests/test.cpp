@@ -25,8 +25,8 @@ TEST_F(DotenvTest, GetInt) {
 }
 
 TEST_F(DotenvTest, GetFloat) {
-    float value = dotenv::get<float>("TEST_FLOAT");
-    EXPECT_FLOAT_EQ(value, 456.78f);
+    auto value = dotenv::get<float>("TEST_FLOAT");
+    EXPECT_FLOAT_EQ(value, 456.78F);
 }
 
 TEST_F(DotenvTest, GetWithDefault) {
@@ -133,7 +133,7 @@ TEST_F(DotenvTest, OptionalAPI) {
 
     auto float_result = dotenv::get_optional<float>("OPTIONAL_FLOAT");
     ASSERT_TRUE(float_result.has_value());
-    EXPECT_FLOAT_EQ(float_result.value(), 3.14f);
+    EXPECT_FLOAT_EQ(float_result.value(), 3.14F);
 
     // Teste get_optional com parsing inválido
     auto invalid_result = dotenv::get_optional<int>("OPTIONAL_INVALID");

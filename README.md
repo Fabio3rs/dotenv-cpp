@@ -68,7 +68,11 @@ Include `dotenv.hpp` and use the `dotenv` namespace:
 #include <iostream>
 
 int main() {
+    // Load .env file and apply variables to system environment
     dotenv::load(".env");
+
+    // Load .env file but keep variables internal only (don't modify system env)
+    // dotenv::load(".env", 1, false);
 
     std::string_view value = dotenv::get("MY_KEY", "default_value");
     std::cout << "MY_KEY: " << value << std::endl;
@@ -89,7 +93,11 @@ Include `dotenv.h` and use the C functions:
 #include <stdio.h>
 
 int main() {
-    dotenv_load(".env", 1);
+    // Load .env file and apply variables to system environment
+    dotenv_load(".env", 1, 1);
+
+    // Load .env file but keep variables internal only (don't modify system env)
+    // dotenv_load(".env", 1, 0);
 
     const char *value = dotenv_get("MY_KEY", "default_value");
     printf("MY_KEY: %s\n", value);
@@ -104,10 +112,11 @@ int main() {
 
 ### C++ API (`dotenv.hpp`)
 
-- **`int dotenv::load(std::string_view path = ".env", int replace = 1)`**
+- **`int dotenv::load(std::string_view path = ".env", int replace = 1, bool apply_system_env = true)`**
   Loads the environment variables from the specified `.env` file.
   - `path`: Path to the `.env` file (default: `.env`).
   - `replace`: Replace existing variables (default: `1`).
+  - `apply_system_env`: Whether to apply variables to system environment via setenv() (default: `true`). When `false`, variables are only stored internally.
 
 - **`std::string_view dotenv::get(std::string_view key, std::string_view default_value = "")`**
   Retrieves the value of the given key or a default value if the key doesn't exist.
@@ -123,8 +132,11 @@ int main() {
 
 ### C API (`dotenv.h`)
 
-- **`int dotenv_load(const char *path, int replace)`**
+- **`int dotenv_load(const char *path, int replace, int apply_system_env)`**
   Loads environment variables from a `.env` file.
+  - `path`: Path to the `.env` file.
+  - `replace`: Replace existing variables.
+  - `apply_system_env`: Whether to apply variables to system environment (1=apply, 0=internal only).
 
 - **`const char *dotenv_get(const char *key, const char *default_value)`**
   Retrieves the value of the given key or a default value if the key doesn't exist.

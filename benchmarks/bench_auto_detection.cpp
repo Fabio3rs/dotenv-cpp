@@ -19,17 +19,17 @@ class AutoDetectionBenchmarkFixture : public benchmark::Fixture {
 
   protected:
     void create_test_files() {
-        // Arquivo muito pequeno (< 1KB, deve usar tradicional)
+        // Arquivo muito pequeno (< 50KB, deve usar tradicional)
         create_test_file("auto_tiny.env", 20);
 
-        // Arquivo médio (> 1KB, deve usar SIMD)
+        // Arquivo médio (> 50KB, deve usar SIMD)
         create_test_file("auto_medium.env", 1000);
 
-        // Arquivo grande (> 1KB, deve usar SIMD)
+        // Arquivo grande (> 50KB, deve usar SIMD)
         create_test_file("auto_large.env", 10000);
     }
 
-    void create_test_file(const std::string &filename, int num_vars) {
+    static void create_test_file(const std::string &filename, int num_vars) {
         std::ofstream file(filename);
 
         for (int i = 0; i < num_vars; ++i) {
@@ -45,7 +45,7 @@ class AutoDetectionBenchmarkFixture : public benchmark::Fixture {
         }
     }
 
-    void cleanup_test_files() {
+    static void cleanup_test_files() {
         std::filesystem::remove("auto_tiny.env");
         std::filesystem::remove("auto_medium.env");
         std::filesystem::remove("auto_large.env");
@@ -56,8 +56,8 @@ class AutoDetectionBenchmarkFixture : public benchmark::Fixture {
 BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_TinyFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        // Auto-detecção: deve usar tradicional (< 1KB)
-        dotenv::load("auto_tiny.env");
+        // Auto-detecção: deve usar tradicional (< 50KB)
+        dotenv::load("auto_tiny.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -65,8 +65,8 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_TinyFile)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_MediumFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        // Auto-detecção: deve usar SIMD (> 1KB)
-        dotenv::load("auto_medium.env");
+        // Auto-detecção: deve usar SIMD (> 50KB)
+        dotenv::load("auto_medium.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -74,8 +74,8 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_MediumFile)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_LargeFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        // Auto-detecção: deve usar SIMD (> 1KB)
-        dotenv::load("auto_large.env");
+        // Auto-detecção: deve usar SIMD (> 50KB)
+        dotenv::load("auto_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -84,7 +84,7 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, AutoDetection_LargeFile)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_AutoDetection_Large)
 (benchmark::State &state) {
     for (auto _ : state) {
-        dotenv::load("auto_large.env");
+        dotenv::load("auto_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -92,7 +92,7 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_AutoDetection_Large)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_Traditional_Large)
 (benchmark::State &state) {
     for (auto _ : state) {
-        dotenv::load_traditional("auto_large.env");
+        dotenv::load_traditional("auto_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -100,7 +100,7 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_Traditional_Large)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_SIMD_Large)
 (benchmark::State &state) {
     for (auto _ : state) {
-        dotenv::load_simd("auto_large.env", 1);
+        dotenv::load_simd("auto_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }

@@ -15,15 +15,15 @@ class FileBenchmarkFixture : public benchmark::Fixture {
 
         // Arquivo pequeno (10 variáveis)
         create_test_file("small_test.env", 10);
-        test_files.push_back("small_test.env");
+        test_files.emplace_back("small_test.env");
 
         // Arquivo médio (100 variáveis)
         create_test_file("medium_test.env", 100);
-        test_files.push_back("medium_test.env");
+        test_files.emplace_back("medium_test.env");
 
         // Arquivo grande (1000 variáveis)
         create_test_file("large_test.env", 1000);
-        test_files.push_back("large_test.env");
+        test_files.emplace_back("large_test.env");
     }
 
     void TearDown([[maybe_unused]] const ::benchmark::State &state) override {
@@ -34,7 +34,7 @@ class FileBenchmarkFixture : public benchmark::Fixture {
     }
 
   private:
-    void create_test_file(const std::string &filename, int num_vars) {
+    static void create_test_file(const std::string &filename, int num_vars) {
         std::ofstream file(filename);
         for (int i = 0; i < num_vars; ++i) {
             file << "TEST_VAR_" << i << "=value_" << i
@@ -58,7 +58,7 @@ class FileBenchmarkFixture : public benchmark::Fixture {
 BENCHMARK_DEFINE_F(FileBenchmarkFixture, LoadSmallFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        bool result = dotenv::load("small_test.env");
+        bool result = dotenv::load("small_test.env", 1, false) != 0;
         benchmark::DoNotOptimize(result);
     }
     state.SetItemsProcessed(state.iterations());
@@ -69,7 +69,7 @@ BENCHMARK_REGISTER_F(FileBenchmarkFixture, LoadSmallFile)
 BENCHMARK_DEFINE_F(FileBenchmarkFixture, LoadMediumFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        bool result = dotenv::load("medium_test.env");
+        bool result = dotenv::load("medium_test.env", 1, false) != 0;
         benchmark::DoNotOptimize(result);
     }
     state.SetItemsProcessed(state.iterations());
@@ -80,7 +80,7 @@ BENCHMARK_REGISTER_F(FileBenchmarkFixture, LoadMediumFile)
 BENCHMARK_DEFINE_F(FileBenchmarkFixture, LoadLargeFile)
 (benchmark::State &state) {
     for (auto _ : state) {
-        bool result = dotenv::load("large_test.env");
+        bool result = dotenv::load("large_test.env", 1, false) != 0;
         benchmark::DoNotOptimize(result);
     }
     state.SetItemsProcessed(state.iterations());
@@ -118,7 +118,7 @@ BENCHMARK_REGISTER_F(FileBenchmarkFixture, SaveOperation)
 BENCHMARK_DEFINE_F(FileBenchmarkFixture, LoadThenGet)(benchmark::State &state) {
     for (auto _ : state) {
         // Load file
-        bool loaded = dotenv::load("medium_test.env");
+        bool loaded = dotenv::load("medium_test.env", 1, false) != 0;
         benchmark::DoNotOptimize(loaded);
 
         // Get some values

@@ -28,25 +28,51 @@ inline void errcToException(std::errc ec, std::string_view value) {
     }
 }
 
-int load(std::string_view path = ".env", int replace = 1) noexcept;
+void write_system_env_from_env_map(int replace = 1);
+
+/**
+ * @brief Load environment variables from a .env file
+ * @param path Path to the .env file (default: ".env")
+ * @param replace Whether to replace existing environment variables (1=replace,
+ * 0=preserve existing)
+ * @param apply_system_env Whether to apply variables to system environment via
+ * setenv() (true=apply, false=internal only)
+ * @return Number of variables loaded successfully, or -1 on error
+ * @note When apply_system_env=false, variables are only stored internally and
+ * accessible via dotenv::get()
+ * @note When apply_system_env=true, variables are applied to both internal
+ * storage and system environment
+ */
+int load(std::string_view path = ".env", int replace = 1,
+         bool apply_system_env = true) noexcept;
 
 /**
  * @brief Force traditional implementation (no SIMD, for benchmarking)
  * @param path Path to .env file
- * @param replace Whether to replace existing variables
+ * @param replace Whether to replace existing variables (1=replace, 0=preserve
+ * existing)
+ * @param apply_system_env Whether to apply variables to system environment via
+ * setenv() (true=apply, false=internal only)
  * @return Number of variables loaded, or -1 on error
+ * @note This function bypasses SIMD auto-detection and uses traditional file
+ * parsing
  */
-int load_traditional(std::string_view path = ".env", int replace = 1) noexcept;
+int load_traditional(std::string_view path = ".env", int replace = 1,
+                     bool apply_system_env = true) noexcept;
 
 #ifdef DOTENV_SIMD_ENABLED
 /**
  * @brief Load .env file with SIMD optimization when available
  * @param path Path to .env file
- * @param replace Whether to replace existing variables
- * @param force_simd Force SIMD even if auto-detection suggests otherwise
+ * @param replace Whether to replace existing variables (1=replace, 0=preserve
+ * existing)
+ * @param apply_system_env Whether to apply variables to system environment via
+ * setenv() (true=apply, false=internal only)
  * @return Number of variables loaded, or -1 on error
+ * @note This function forces SIMD usage even for small files
  */
-int load_simd(std::string_view path = ".env", int replace = 1) noexcept;
+int load_simd(std::string_view path = ".env", int replace = 1,
+              bool apply_system_env = true) noexcept;
 #endif
 std::string_view get(std::string_view key, std::string_view default_value = "");
 std::string get_string(std::string_view key,

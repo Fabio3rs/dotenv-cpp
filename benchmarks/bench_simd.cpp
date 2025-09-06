@@ -32,7 +32,7 @@ class SIMDBenchmarkFixture : public benchmark::Fixture {
         create_test_file("simd_xlarge.env", 100000);
     }
 
-    void create_test_file(const std::string &filename, int num_vars) {
+    static void create_test_file(const std::string &filename, int num_vars) {
         std::ofstream file(filename);
 
         for (int i = 0; i < num_vars; ++i) {
@@ -48,7 +48,7 @@ class SIMDBenchmarkFixture : public benchmark::Fixture {
         }
     }
 
-    void cleanup_test_files() {
+    static void cleanup_test_files() {
         std::filesystem::remove("simd_small.env");
         std::filesystem::remove("simd_medium.env");
         std::filesystem::remove("simd_large.env");
@@ -61,7 +61,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadSmallFile_Standard)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força implementação tradicional (sem SIMD)
-        dotenv::load_traditional("simd_small.env");
+        dotenv::load_traditional("simd_small.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -69,7 +69,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadSmallFile_Standard)
 BENCHMARK_F(SIMDBenchmarkFixture, LoadSmallFile_SIMD)(benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_small.env", 1);
+        dotenv::load_simd("simd_small.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -79,7 +79,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadMediumFile_Standard)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força implementação tradicional (sem SIMD)
-        dotenv::load_traditional("simd_medium.env");
+        dotenv::load_traditional("simd_medium.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -88,7 +88,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadMediumFile_SIMD)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_medium.env", 1);
+        dotenv::load_simd("simd_medium.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -98,7 +98,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadLargeFile_Standard)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força implementação tradicional (sem SIMD)
-        dotenv::load_traditional("simd_large.env");
+        dotenv::load_traditional("simd_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -106,7 +106,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadLargeFile_Standard)
 BENCHMARK_F(SIMDBenchmarkFixture, LoadLargeFile_SIMD)(benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_large.env", 1);
+        dotenv::load_simd("simd_large.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -116,7 +116,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadXLargeFile_Standard)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força implementação tradicional (sem SIMD)
-        dotenv::load_traditional("simd_xlarge.env");
+        dotenv::load_traditional("simd_xlarge.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -125,7 +125,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadXLargeFile_SIMD)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_xlarge.env", 1);
+        dotenv::load_simd("simd_xlarge.env", 1, false);
     }
     state.SetItemsProcessed(state.iterations());
 }

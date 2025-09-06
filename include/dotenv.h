@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-int dotenv_load(const char *path, int replace);
+int dotenv_load(const char *path, int replace, int apply_system_env);
 const char *dotenv_get(const char *key, const char *default_value);
 void dotenv_save(const char *path);
 

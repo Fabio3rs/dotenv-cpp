@@ -1,12 +1,12 @@
 #include "dotenv.hpp"
 #include <iostream>
 
-int main() {
-    std::cout << "Hello, World!" << std::endl;
+auto main() -> int {
+    std::cout << "Hello, World!" << '\n';
 
     dotenv::load();
 
-    std::cout << dotenv::get("FOO") << std::endl;
+    std::cout << dotenv::get("FOO") << '\n';
 
     return 0;
 }
