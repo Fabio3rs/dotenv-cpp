@@ -6,6 +6,11 @@
 #include <string>
 #include <string_view>
 
+// Include SIMD header if available
+#ifdef DOTENV_SIMD_ENABLED
+#include "dotenv_simd.hpp"
+#endif
+
 namespace dotenv {
 struct ThrowPolicy {};
 struct NoThrowPolicy {};
@@ -24,6 +29,25 @@ inline void errcToException(std::errc ec, std::string_view value) {
 }
 
 int load(std::string_view path = ".env", int replace = 1) noexcept;
+
+/**
+ * @brief Force traditional implementation (no SIMD, for benchmarking)
+ * @param path Path to .env file
+ * @param replace Whether to replace existing variables
+ * @return Number of variables loaded, or -1 on error
+ */
+int load_traditional(std::string_view path = ".env", int replace = 1) noexcept;
+
+#ifdef DOTENV_SIMD_ENABLED
+/**
+ * @brief Load .env file with SIMD optimization when available
+ * @param path Path to .env file
+ * @param replace Whether to replace existing variables
+ * @param force_simd Force SIMD even if auto-detection suggests otherwise
+ * @return Number of variables loaded, or -1 on error
+ */
+int load_simd(std::string_view path = ".env", int replace = 1) noexcept;
+#endif
 std::string_view get(std::string_view key, std::string_view default_value = "");
 std::string get_string(std::string_view key,
                        std::string_view default_value = "");

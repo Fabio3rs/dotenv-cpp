@@ -1,6 +1,7 @@
 #include "dotenv.hpp"
 #include <benchmark/benchmark.h>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -37,7 +38,8 @@ class FileBenchmarkFixture : public benchmark::Fixture {
         std::ofstream file(filename);
         for (int i = 0; i < num_vars; ++i) {
             file << "TEST_VAR_" << i << "=value_" << i
-                 << "_with_some_longer_content\n";
+                 << "_with_some_longer_content_"
+                    "abcdefghijklmnopqrstuvwxyz0123456789\n";
             if (i % 10 == 0) {
                 file << "# Comentário para testar parsing\n";
             }
@@ -121,7 +123,7 @@ BENCHMARK_DEFINE_F(FileBenchmarkFixture, LoadThenGet)(benchmark::State &state) {
 
         // Get some values
         for (int i = 0; i < 10; ++i) {
-            auto result = dotenv::get("TEST_VAR_" + std::to_string(i * 10));
+            auto result = dotenv::get(std::format("TEST_VAR_{}", i * 10));
             benchmark::DoNotOptimize(result);
         }
     }

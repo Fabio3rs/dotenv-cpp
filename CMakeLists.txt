@@ -130,6 +130,27 @@ if(DOTENV_ENABLE_SANITIZERS)
     endif()
 endif()
 
+# SIMD optimizations - enable by default in Release builds for maximum performance
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    option(DOTENV_ENABLE_SIMD "Enable SIMD optimizations (requires AVX2)" ON)
+else()
+    option(DOTENV_ENABLE_SIMD "Enable SIMD optimizations (requires AVX2)" OFF)
+endif()
+
+# Check for AVX2 support if SIMD is enabled
+if(DOTENV_ENABLE_SIMD)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
+
+    if(COMPILER_SUPPORTS_AVX2)
+        message(STATUS "AVX2 support detected, enabling SIMD optimizations")
+        add_compile_definitions(DOTENV_SIMD_ENABLED)
+    else()
+        message(WARNING "AVX2 not supported by compiler, disabling SIMD optimizations")
+        set(DOTENV_ENABLE_SIMD OFF)
+    endif()
+endif()
+
 # Function to filter out excluded files
 function(filter_out excluded output)
     set(result "")
@@ -144,7 +165,13 @@ endfunction()
 # Add source files - usar lista explícita em vez de GLOB_RECURSE
 set(DOTENV_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dotenv.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/dotenv_mmap.cpp"
 )
+
+# Add SIMD sources if enabled
+if(DOTENV_ENABLE_SIMD)
+    list(APPEND DOTENV_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/dotenv_simd.cpp")
+endif()
 
 message(STATUS "DOTENV_SOURCES: ${DOTENV_SOURCES}")
 
@@ -159,6 +186,13 @@ target_include_directories(dotenv_lib
 
 # Usar target_compile_features para garantir C++20
 target_compile_features(dotenv_lib PUBLIC cxx_std_20)
+
+# Add SIMD-specific compilation flags
+if(DOTENV_ENABLE_SIMD AND COMPILER_SUPPORTS_AVX2)
+    target_compile_options(dotenv_lib PRIVATE -mavx2)
+    target_compile_definitions(dotenv_lib PRIVATE DOTENV_SIMD_ENABLED)
+    message(STATUS "SIMD optimizations enabled with AVX2")
+endif()
 
 if (DOTENV_COMPILER_FLAGS)
     target_compile_options(dotenv_lib PRIVATE ${DOTENV_COMPILER_FLAGS})

@@ -2,12 +2,24 @@ cmake_minimum_required(VERSION 3.12)
 
 # Benchmark executable
 if(benchmark_FOUND OR TARGET benchmark::benchmark)
-    add_executable(dotenv_benchmarks
+    set(BENCHMARK_SOURCES
         bench_main.cpp
         bench_core_operations.cpp
         bench_file_operations.cpp
         bench_thread_safety.cpp
     )
+
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_C_STANDARD 11)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+    # Add SIMD benchmarks if enabled
+    if(DOTENV_ENABLE_SIMD)
+        list(APPEND BENCHMARK_SOURCES bench_simd.cpp bench_auto_detection.cpp)
+    endif()
+
+    add_executable(dotenv_benchmarks ${BENCHMARK_SOURCES})
 
     target_link_libraries(dotenv_benchmarks
         PRIVATE

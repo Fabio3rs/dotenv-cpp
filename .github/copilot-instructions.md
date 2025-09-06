@@ -42,6 +42,7 @@ Se o usuário não informar, assuma **defaults seguros**:
 
   * Sempre use `{}` em blocos de controle (`if`, `for`, `while`), mesmo com uma só instrução.
   * Nunca omita chaves.
+  * Use early returns para reduzir indentação.
 * **Tipos/Interfaces**:
 
   * Prefira `enum class` em vez de `enum`.

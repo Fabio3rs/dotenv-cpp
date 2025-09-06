@@ -2,6 +2,7 @@
 #include <atomic>
 #include <benchmark/benchmark.h>
 #include <chrono>
+#include <format>
 #include <thread>
 #include <vector>
 
@@ -11,15 +12,15 @@ class ThreadSafetyBenchmark : public benchmark::Fixture {
     void SetUp([[maybe_unused]] const ::benchmark::State &state) override {
         // Setup inicial com algumas variáveis
         for (int i = 0; i < 100; ++i) {
-            dotenv::set("THREAD_VAR_" + std::to_string(i),
-                        "thread_value_" + std::to_string(i));
+            dotenv::set(std::format("THREAD_VAR_{}", i),
+                        std::format("thread_value_{}", i));
         }
     }
 
     void TearDown([[maybe_unused]] const ::benchmark::State &state) override {
         // Cleanup
         for (int i = 0; i < 100; ++i) {
-            dotenv::unset("THREAD_VAR_" + std::to_string(i));
+            dotenv::unset(std::format("THREAD_VAR_{}", i));
         }
     }
 };
@@ -40,7 +41,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ConcurrentReads)
             threads.emplace_back([&, t]() {
                 for (int i = 0; i < 100; ++i) {
                     auto result =
-                        dotenv::get("THREAD_VAR_" + std::to_string(i % 100));
+                        dotenv::get(std::format("THREAD_VAR_{}", i % 100));
                     benchmark::DoNotOptimize(result);
                     operations_completed.fetch_add(1);
                 }
@@ -78,10 +79,8 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ConcurrentWrites)
         for (int t = 0; t < num_threads; ++t) {
             threads.emplace_back([&, t]() {
                 for (int i = 0; i < 50; ++i) {
-                    std::string key = "WRITE_VAR_" + std::to_string(t) + "_" +
-                                      std::to_string(i);
-                    std::string value = "write_value_" + std::to_string(t) +
-                                        "_" + std::to_string(i);
+                    std::string key = std::format("WRITE_VAR_{}_{}", t, i);
+                    std::string value = std::format("write_value_{}_{}", t, i);
                     dotenv::set(key, value);
                     operations_completed.fetch_add(1);
                 }
@@ -98,8 +97,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ConcurrentWrites)
         // Cleanup das variáveis criadas
         for (int t = 0; t < num_threads; ++t) {
             for (int i = 0; i < 50; ++i) {
-                std::string key =
-                    "WRITE_VAR_" + std::to_string(t) + "_" + std::to_string(i);
+                std::string key = std::format("WRITE_VAR_{}_{}", t, i);
                 dotenv::unset(key);
             }
         }
@@ -124,10 +122,10 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, MixedReadWrite)
         for (int t = 0; t < num_threads; ++t) {
             if (t % 2 == 0) {
                 // Reader thread
-                threads.emplace_back([&, t]() {
+                threads.emplace_back([&]() {
                     for (int i = 0; i < 100; ++i) {
-                        auto result = dotenv::get("THREAD_VAR_" +
-                                                  std::to_string(i % 100));
+                        auto result =
+                            dotenv::get(std::format("THREAD_VAR_{}", i % 100));
                         benchmark::DoNotOptimize(result);
                         operations_completed.fetch_add(1);
                     }
@@ -136,10 +134,9 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, MixedReadWrite)
                 // Writer thread
                 threads.emplace_back([&, t]() {
                     for (int i = 0; i < 25; ++i) {
-                        std::string key = "MIXED_VAR_" + std::to_string(t) +
-                                          "_" + std::to_string(i);
-                        std::string value = "mixed_value_" + std::to_string(t) +
-                                            "_" + std::to_string(i);
+                        std::string key = std::format("MIXED_VAR_{}_{}", t, i);
+                        std::string value =
+                            std::format("mixed_value_{}_{}", t, i);
                         dotenv::set(key, value);
                         operations_completed.fetch_add(1);
                     }
@@ -157,8 +154,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, MixedReadWrite)
         // Cleanup das variáveis criadas pelos writers
         for (int t = 1; t < num_threads; t += 2) { // only writer threads
             for (int i = 0; i < 25; ++i) {
-                std::string key =
-                    "MIXED_VAR_" + std::to_string(t) + "_" + std::to_string(i);
+                std::string key = std::format("MIXED_VAR_{}_{}", t, i);
                 dotenv::unset(key);
             }
         }
@@ -191,7 +187,7 @@ BENCHMARK_DEFINE_F(ThreadSafetyBenchmark, ContentionTest)
                     if (i % 10 == 0) {
                         // Ocasionalmente escrever
                         dotenv::set(contended_key,
-                                    "value_from_thread_" + std::to_string(t));
+                                    std::format("value_from_thread_{}", t));
                     } else {
                         // Principalmente ler
                         auto result = dotenv::get(contended_key);
