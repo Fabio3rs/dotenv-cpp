@@ -24,7 +24,7 @@ class SIMDTest : public ::testing::Test {
 };
 
 TEST_F(SIMDTest, LoadSIMDBasic) {
-    auto [error, count] = dotenv::load_simd("test_simd.env");
+    auto [error, count] = dotenv::load_simd_legacy("test_simd.env");
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(count, 0);
 
@@ -57,7 +57,7 @@ TEST_F(SIMDTest, SIMDAvailabilityCheck) {
     bool avx2_available = dotenv::simd::is_avx2_available();
 
     // Should not crash
-    auto [error, count] = dotenv::load_simd("test_simd.env");
+    auto [error, count] = dotenv::load_simd_legacy("test_simd.env");
 
     if (avx2_available) {
         EXPECT_EQ(error, dotenv::dotenv_error::success);
@@ -82,7 +82,7 @@ TEST_F(SIMDTest, SIMDLargeFile) {
     }
     large_file.close();
 
-    auto [error, count] = dotenv::load_simd("large_simd_test.env");
+    auto [error, count] = dotenv::load_simd_legacy("large_simd_test.env");
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(count, 900); // Should load most variables (excluding comments)
 

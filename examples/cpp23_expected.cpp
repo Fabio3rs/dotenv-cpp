@@ -21,7 +21,7 @@ int main() {
     // Example 1: Basic usage with std::expected
     std::cout << "\n1. Basic std::expected usage:" << '\n';
 
-    auto result = dotenv::load_expected(".env", 1, false);
+    auto result = dotenv::load(".env", {});
 
     if (result) {
         std::cout << "✅ Successfully loaded " << *result << " variables"
@@ -53,7 +53,7 @@ int main() {
     };
 
     auto config_result =
-        dotenv::load_expected("nonexistent.env", 1, false)
+        dotenv::load("nonexistent.env", {})
             .and_then(process_config)
             .or_else([](dotenv_error_t error)
                          -> std::expected<std::string, dotenv_error_t> {
@@ -116,7 +116,7 @@ int main() {
     std::vector<std::string> errors;
 
     for (const auto &file : config_files) {
-        auto file_result = dotenv::load_expected(file, 1, false);
+        auto file_result = dotenv::load(file, {});
 
         file_result
             .and_then([&](int count) -> std::expected<int, dotenv_error_t> {
@@ -149,7 +149,7 @@ int main() {
     std::cout << "\n6. Using value_or for defaults:" << '\n';
 
     auto safe_load = [](const std::string &file) {
-        return dotenv::load_expected(file, 1, false).value_or(0);
+        return dotenv::load(file, {}).value_or(0);
     };
 
     int main_config = safe_load(".env");

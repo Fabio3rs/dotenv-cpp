@@ -62,7 +62,7 @@ TEST_F(DotenvTest, SaveAndLoad) {
     dotenv::save_to_file("test.env");
 
     dotenv::set("SAVE_KEY", "");
-    auto [error, count] = dotenv::load("test.env");
+    auto [error, count] = dotenv::load_legacy("test.env");
     EXPECT_EQ(error, dotenv::dotenv_error::success);
 
     std::string value = dotenv::value("SAVE_KEY");
@@ -103,7 +103,7 @@ TEST_F(DotenvTest, ParserRobust) {
     env_file.close();
 
     // Carregar o arquivo
-    auto [error, count] = dotenv::load("parser_test.env");
+    auto [error, count] = dotenv::load_legacy("parser_test.env");
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(count, 0);
 

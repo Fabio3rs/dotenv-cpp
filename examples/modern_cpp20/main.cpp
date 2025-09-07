@@ -27,7 +27,7 @@ void demonstrate_modern_api() {
             .apply_to_process = dotenv::process_env_apply::yes,
             .backend = dotenv::parse_backend::auto_detect};
 
-        auto [error, count] = dotenv::load("config.env", opts);
+        auto [error, count] = dotenv::load_legacy("config.env", opts);
 
         if (error == dotenv::dotenv_error::success) {
             std::cout << std::format("   ✅ Loaded {} variables\n", count);
@@ -125,7 +125,7 @@ void demonstrate_modern_api() {
         std::cout << "   🏃 SIMD optimizations: ✅ Available\n";
 
         auto start = std::chrono::high_resolution_clock::now();
-        [[maybe_unused]] auto [error, count] = dotenv::load_simd(
+        [[maybe_unused]] auto [error, count] = dotenv::load_simd_legacy(
             "production.env", {.backend = dotenv::parse_backend::simd});
         auto end = std::chrono::high_resolution_clock::now();
 

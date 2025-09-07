@@ -8,6 +8,7 @@
 
 #include "dotenv.hpp"
 #include "dotenv_errors.h"
+#include <dotenv_types.h>
 #include <iostream>
 #include <string>
 
@@ -101,7 +102,7 @@ int main() {
     std::cout << "📊 Total variables loaded: " << total_variables << std::endl;
 
     // Apply all loaded variables to system environment
-    dotenv::apply_internal_to_process_env(1);
+    dotenv::apply_internal_to_process_env(dotenv::overwrite::replace);
 
     return 0;
 }

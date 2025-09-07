@@ -5,7 +5,7 @@ int main() {
     std::cout << "=== CMake Integration Example ===\n";
 
     // Load configuration using structured bindings (C++17)
-    auto [error, count] = dotenv::load("config.env");
+    auto [error, count] = dotenv::load_legacy("config.env");
     if (error != dotenv::dotenv_error::success) {
         std::cerr << "Failed to load config.env (error: "
                   << static_cast<int>(error) << ")\n";

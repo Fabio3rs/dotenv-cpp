@@ -100,11 +100,52 @@ endif()
 if(DOTENV_ENABLE_TESTS)
     include(CTest)
     enable_testing()
-    find_package(GTest)
 
-    if(GTest_FOUND)
-        include(GoogleTest)
+    # Use FetchContent to get GTest with compatible compiler flags
+    include(FetchContent)
+
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+
+    # Configure GTest to use the same C++ standard and compiler flags
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+
+    FetchContent_MakeAvailable(googletest)
+
+    # Apply same compiler flags to GTest as our project
+    if(TARGET gtest)
+        target_compile_features(gtest PRIVATE cxx_std_${DOTENV_DETECTED_CXX_STANDARD})
+        if(CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+            target_compile_options(gtest PRIVATE -stdlib=libc++)
+            target_link_libraries(gtest PRIVATE -stdlib=libc++ -lc++abi)
+        endif()
+        # Disable warnings for GTest
+        target_compile_options(gtest PRIVATE
+            -Wno-conversion
+            -Wno-sign-conversion
+            -Wno-error
+        )
     endif()
+
+    if(TARGET gtest_main)
+        target_compile_features(gtest_main PRIVATE cxx_std_${DOTENV_DETECTED_CXX_STANDARD})
+        if(CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+            target_compile_options(gtest_main PRIVATE -stdlib=libc++)
+            target_link_libraries(gtest_main PRIVATE -stdlib=libc++ -lc++abi)
+        endif()
+        target_compile_options(gtest_main PRIVATE
+            -Wno-conversion
+            -Wno-sign-conversion
+            -Wno-error
+        )
+    endif()
+
+    include(GoogleTest)
 endif()
 
 if(DOTENV_ENABLE_BENCHMARKS)
@@ -199,6 +240,9 @@ message(STATUS "DOTENV_SOURCES: ${DOTENV_SOURCES}")
 
 add_library(dotenv_lib STATIC ${DOTENV_SOURCES})
 
+# Create alias for consistent naming in build and install trees
+add_library(dotenv::dotenv_lib ALIAS dotenv_lib)
+
 # Usar target_include_directories em vez de include_directories global
 target_include_directories(dotenv_lib
     PUBLIC
@@ -206,8 +250,19 @@ target_include_directories(dotenv_lib
         $<INSTALL_INTERFACE:include>
 )
 
-# Usar target_compile_features para garantir C++20
-target_compile_features(dotenv_lib PUBLIC cxx_std_20)
+# Use detected C++ standard
+if(DOTENV_DETECTED_CXX_STANDARD EQUAL 23)
+    target_compile_features(dotenv_lib PUBLIC cxx_std_23)
+else()
+    target_compile_features(dotenv_lib PUBLIC cxx_std_20)
+endif()
+
+# Configure C++23 features if detected
+if(DOTENV_HAS_EXPECTED)
+    target_compile_definitions(dotenv_lib PUBLIC DOTENV_HAS_EXPECTED=1)
+else()
+    target_compile_definitions(dotenv_lib PUBLIC DOTENV_HAS_EXPECTED=0)
+endif()
 
 # Add SIMD-specific compilation flags
 if(DOTENV_ENABLE_SIMD AND DOTENV_AVX2_SUPPORTED)
@@ -231,7 +286,13 @@ endif()
 if (DOTENV_BUILD_EXE)
     add_executable(dotenvexe "src/main.cpp")
     target_link_libraries(dotenvexe dotenv_lib)
-    target_compile_features(dotenvexe PRIVATE cxx_std_20)
+
+    # Use same C++ standard as the library
+    if(DOTENV_DETECTED_CXX_STANDARD EQUAL 23)
+        target_compile_features(dotenvexe PRIVATE cxx_std_23)
+    else()
+        target_compile_features(dotenvexe PRIVATE cxx_std_20)
+    endif()
 
     if (DOTENV_COMPILER_FLAGS)
         target_compile_options(dotenvexe PRIVATE ${DOTENV_COMPILER_FLAGS})
@@ -313,5 +374,9 @@ else()
 endif()
 
 if(DOTENV_BUILD_EXAMPLES)
+    # Pass detected C++ standard and features to examples
+    set(DOTENV_DETECTED_CXX_STANDARD ${DOTENV_DETECTED_CXX_STANDARD} CACHE INTERNAL "Detected C++ standard")
+    set(DOTENV_HAS_EXPECTED ${DOTENV_HAS_EXPECTED} CACHE INTERNAL "Whether std::expected is available")
+
     add_subdirectory(examples)
 endif()

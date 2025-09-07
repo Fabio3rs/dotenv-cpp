@@ -1,4 +1,5 @@
 #include "dotenv.hpp"
+#include "dotenv_types.h"
 #include <benchmark/benchmark.h>
 #include <filesystem>
 #include <fstream>
@@ -54,6 +55,11 @@ class SIMDBenchmarkFixture : public benchmark::Fixture {
         std::filesystem::remove("simd_large.env");
         std::filesystem::remove("simd_xlarge.env");
     }
+
+    dotenv::load_options options{
+        .overwrite_policy = dotenv::overwrite::preserve,
+        .apply_to_process = dotenv::process_env_apply::no,
+        .backend = dotenv::parse_backend::simd};
 };
 
 // Benchmark: Load Small File - Standard vs SIMD
@@ -69,7 +75,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadSmallFile_Standard)
 BENCHMARK_F(SIMDBenchmarkFixture, LoadSmallFile_SIMD)(benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_small.env", 1, false);
+        dotenv::load_simd("simd_small.env", options);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -88,7 +94,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadMediumFile_SIMD)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_medium.env", 1, false);
+        dotenv::load_simd("simd_medium.env", options);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -106,7 +112,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadLargeFile_Standard)
 BENCHMARK_F(SIMDBenchmarkFixture, LoadLargeFile_SIMD)(benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_large.env", 1, false);
+        dotenv::load_simd("simd_large.env", options);
     }
     state.SetItemsProcessed(state.iterations());
 }
@@ -125,7 +131,7 @@ BENCHMARK_F(SIMDBenchmarkFixture, LoadXLargeFile_SIMD)
 (benchmark::State &state) {
     for (auto _ : state) {
         // Força SIMD independentemente do tamanho
-        dotenv::load_simd("simd_xlarge.env", 1, false);
+        dotenv::load_simd("simd_xlarge.env", options);
     }
     state.SetItemsProcessed(state.iterations());
 }

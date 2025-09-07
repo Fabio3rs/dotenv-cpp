@@ -1,4 +1,5 @@
 #include "dotenv.hpp"
+#include "dotenv_types.h"
 #include <benchmark/benchmark.h>
 #include <filesystem>
 #include <fstream>
@@ -16,6 +17,11 @@ class AutoDetectionBenchmarkFixture : public benchmark::Fixture {
     void TearDown([[maybe_unused]] const ::benchmark::State &state) override {
         cleanup_test_files();
     }
+
+    dotenv::load_options options{
+        .overwrite_policy = dotenv::overwrite::preserve,
+        .apply_to_process = dotenv::process_env_apply::no,
+        .backend = dotenv::parse_backend::auto_detect};
 
   protected:
     void create_test_files() {
@@ -100,7 +106,7 @@ BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_Traditional_Large)
 BENCHMARK_F(AutoDetectionBenchmarkFixture, Comparison_SIMD_Large)
 (benchmark::State &state) {
     for (auto _ : state) {
-        dotenv::load_simd("auto_large.env", 1, false);
+        dotenv::load_simd("auto_large.env", options);
     }
     state.SetItemsProcessed(state.iterations());
 }

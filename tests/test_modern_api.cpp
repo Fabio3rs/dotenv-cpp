@@ -63,7 +63,7 @@ class ModernDotenvAPITest : public ::testing::Test {
 
 TEST_F(ModernDotenvAPITest, LoadWithDefaultOptions) {
     dotenv::load_options opts;
-    auto [error, result] = dotenv::load(test_env_file.string(), opts);
+    auto [error, result] = dotenv::load_legacy(test_env_file.string(), opts);
 
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(result, 0);
@@ -79,7 +79,7 @@ TEST_F(ModernDotenvAPITest, LoadWithCustomOptions) {
     // Set environment variable that should be preserved
     setenv("APP_NAME", "ExistingApp", 1);
 
-    auto [error, result] = dotenv::load(test_env_file.string(), opts);
+    auto [error, result] = dotenv::load_legacy(test_env_file.string(), opts);
 
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(result, 0);
@@ -88,28 +88,28 @@ TEST_F(ModernDotenvAPITest, LoadWithCustomOptions) {
               "ExistingApp"); // Process env preserved
 }
 
-#if __cplusplus >= 202302L
+#if defined(DOTENV_HAS_STD_EXPECTED)
 TEST_F(ModernDotenvAPITest, LoadExpected) {
-    auto result = dotenv::load_expected(test_env_file.string());
+    auto result = dotenv::load(test_env_file.string(), {});
 
     ASSERT_TRUE(result.has_value());
     EXPECT_GT(*result, 0);
 }
 
 TEST_F(ModernDotenvAPITest, LoadExpectedFileNotFound) {
-    auto result = dotenv::load_expected("nonexistent.env");
+    auto result = dotenv::load("nonexistent.env", {});
 
     EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), DOTENV_ERROR_FILE_NOT_FOUND);
+    EXPECT_EQ(result.error(), dotenv::dotenv_error::file_not_found);
 }
 
 TEST_F(ModernDotenvAPITest, LoadExpectedMonadicOperations) {
-    auto result = dotenv::load_expected(test_env_file.string())
+    auto result = dotenv::load(test_env_file.string(), {})
                       .transform([](int count) {
                           return count * 2; // Double the count
                       })
                       .or_else([](auto) {
-                          return std::expected<int, dotenv_error_t>(0);
+                          return std::expected<int, dotenv::dotenv_error>(0);
                       });
 
     ASSERT_TRUE(result.has_value());
@@ -214,7 +214,7 @@ TEST_F(ModernDotenvAPITest, ForceTraditionalBackend) {
     dotenv::load_options opts{.backend = dotenv::parse_backend::traditional};
 
     auto [error, result] =
-        dotenv::load_traditional(test_env_file.string(), opts);
+        dotenv::load_traditional_legacy(test_env_file.string(), opts);
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(result, 0);
     EXPECT_EQ(dotenv::value("APP_NAME"), "TestApp");
@@ -224,7 +224,8 @@ TEST_F(ModernDotenvAPITest, ForceTraditionalBackend) {
 TEST_F(ModernDotenvAPITest, ForceSIMDBackend) {
     dotenv::load_options opts{.backend = dotenv::parse_backend::simd};
 
-    auto [error, result] = dotenv::load_simd(test_env_file.string(), opts);
+    auto [error, result] =
+        dotenv::load_simd_legacy(test_env_file.string(), opts);
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(result, 0);
     EXPECT_EQ(dotenv::value("APP_NAME"), "TestApp");

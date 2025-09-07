@@ -155,17 +155,51 @@ Include `dotenv.hpp` and use the `dotenv` namespace:
 #include <iostream>
 
 int main() {
-    // Load .env file and apply variables to system environment
-    dotenv::load(".env");
+    // Modern C++23 usage with std::expected (recommended)
+    auto result = dotenv::load(".env");
+    if (result) {
+        std::cout << "Loaded " << *result << " variables\n";
+    } else {
+        std::cout << "Failed to load .env: " << static_cast<int>(result.error()) << "\n";
+        return 1;
+    }
 
-    // Load .env file but keep variables internal only (don't modify system env)
-    // dotenv::load(".env", 1, false);
+    // Type-safe variable access
+    auto port = dotenv::get<int>("PORT", 3000);
+    auto debug = dotenv::get<bool>("DEBUG", false);
+    std::string_view app_name = dotenv::get("APP_NAME", "MyApp");
+
+    std::cout << "App: " << app_name << " on port " << port
+              << (debug ? " (debug mode)" : "") << std::endl;
+
+    // Safe internal-only loading (won't affect system environment)
+    auto config_result = dotenv::load("config.env", {
+        .apply_to_process = dotenv::process_env_apply::no
+    });
+
+    // Save current state
+    dotenv::set("LAST_RUN", "2024-09-06");
+    dotenv::save_to_file(".env");
+
+    return 0;
+}
+```
+
+**Legacy Usage (still supported but deprecated):**
+```cpp
+#include "dotenv.hpp"
+#include <iostream>
+
+int main() {
+    // Legacy interface (deprecated but still works)
+    int loaded = dotenv::load(".env", 1, true);
+    if (loaded < 0) {
+        std::cerr << "Failed to load .env\n";
+        return 1;
+    }
 
     std::string_view value = dotenv::get("MY_KEY", "default_value");
     std::cout << "MY_KEY: " << value << std::endl;
-
-    dotenv::set("NEW_KEY", "new_value");
-    dotenv::save(".env");
 
     return 0;
 }
@@ -202,6 +236,7 @@ int main() {
 #### Basic Loading Functions
 
 - **`int dotenv::load(std::string_view path = ".env", int replace = 1, bool apply_system_env = true)`**
+  **[DEPRECATED]** Legacy interface. Use modern `load(path, load_options{})` instead.
   Loads the environment variables from the specified `.env` file.
   - `path`: Path to the `.env` file (default: `.env`).
   - `replace`: Replace existing variables (default: `1`).
@@ -209,67 +244,148 @@ int main() {
   - Returns: Number of variables loaded, or negative error code.
 
 - **`int dotenv::load_traditional(std::string_view path, int replace, bool apply_system_env)`**
+  **[DEPRECATED]** Legacy interface. Use modern `load_traditional(path, load_options{})` instead.
   Forces traditional implementation (no SIMD optimization).
+
+#### Modern Loading Functions (Recommended)
+
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load(std::string_view path, const load_options& options = {})`**
+  **[C++23 RECOMMENDED]** Modern type-safe interface with std::expected.
+  - `path`: Path to the `.env` file.
+  - `options`: Type-safe configuration structure.
+  - Returns: Expected containing variable count, or unexpected containing error.
+  - Example:
+    ```cpp
+    // Modern usage with type-safe options
+    auto result = dotenv::load(".env", {
+        .overwrite_policy = dotenv::overwrite::replace,
+        .apply_to_process = dotenv::process_env_apply::no  // Keep variables internal only
+    });
+
+    if (result) {
+        std::cout << "Loaded " << *result << " variables\n";
+    } else {
+        std::cout << "Error: " << static_cast<int>(result.error()) << "\n";
+    }
+    ```
+
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load_traditional(std::string_view path, const load_options& options = {})`**
+  Modern interface forcing traditional implementation.
+
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load_simd(std::string_view path, const load_options& options = {})`** (if SIMD enabled)
+  Modern interface forcing SIMD-optimized implementation.
+
+#### Load Options Configuration
+
+The `load_options` struct provides type-safe configuration:
+
+```cpp
+namespace dotenv {
+    enum class overwrite {
+        preserve,  // Don't overwrite existing variables
+        replace    // Replace existing variables (default)
+    };
+
+    enum class process_env_apply {
+        no,   // Keep variables internal only (safe)
+        yes   // Apply to system environment (default)
+    };
+
+    enum class parse_backend {
+        auto_detect,  // Automatically choose best backend (default)
+        traditional,  // Force traditional parser
+        simd         // Force SIMD parser (if available)
+    };
+
+    struct load_options {
+        overwrite overwrite_policy = overwrite::replace;
+        process_env_apply apply_to_process = process_env_apply::yes;
+        parse_backend backend = parse_backend::auto_detect;
+    };
+}
+```
+
+**Usage Examples:**
+```cpp
+// Safe loading (won't affect system environment)
+auto result = dotenv::load(".env", {
+    .apply_to_process = dotenv::process_env_apply::no
+});
+
+// Conservative loading (won't overwrite existing variables)
+auto result = dotenv::load(".env", {
+    .overwrite_policy = dotenv::overwrite::preserve,
+    .apply_to_process = dotenv::process_env_apply::yes
+});
+
+// Force specific backend
+auto result = dotenv::load("large.env", {
+    .backend = dotenv::parse_backend::simd
+});
+```
 
 #### Enhanced Error Handling (C++20/C++23)
 
 **C++20 - Structured Bindings with std::pair:**
-- **`std::pair<dotenv_error_t, int> dotenv::load_with_status(path, replace, apply_system_env)`**
-  Loads variables with detailed error information.
-  - Returns: `{status_code, variables_loaded}` where status is from `dotenv_error_t` enum.
+- **`std::pair<dotenv::dotenv_error, int> dotenv::load_legacy(path, options)`**
+  Loads variables with detailed error information using legacy pair interface.
+  - Returns: `{status_code, variables_loaded}` where status is from `dotenv::dotenv_error` enum.
   - Example:
     ```cpp
-    auto [status, count] = dotenv::load_with_status(".env");
-    if (status == DOTENV_SUCCESS) {
+    auto [status, count] = dotenv::load_legacy(".env");
+    if (status == dotenv::dotenv_error::success) {
         std::cout << "Loaded " << count << " variables\n";
     } else {
-        std::cout << "Error: " << dotenv_get_error_message(status) << "\n";
+        std::cout << "Error: " << static_cast<int>(status) << "\n";
     }
     ```
 
-- **`std::pair<dotenv_error_t, int> dotenv::load_traditional_with_status(...)`**
+- **`std::pair<dotenv::dotenv_error, int> dotenv::load_traditional_legacy(...)`**
   Traditional implementation with detailed status.
 
-- **`std::pair<dotenv_error_t, int> dotenv::load_simd_with_status(...)`** (if SIMD enabled)
+- **`std::pair<dotenv::dotenv_error, int> dotenv::load_simd_legacy(...)`** (if SIMD enabled)
   SIMD implementation with detailed status.
 
 **C++23 - Modern std::expected (Recommended):**
-- **`std::expected<int, dotenv_error_t> dotenv::load_expected(path, replace, apply_system_env)`**
-  Modern error handling using std::expected.
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load(path, options)`**
+  Modern error handling using std::expected with type-safe load_options.
   - Returns: Expected containing variable count, or unexpected containing error code.
   - Example:
     ```cpp
-    auto result = dotenv::load_expected(".env");
+    auto result = dotenv::load(".env", {.replace_existing = true, .apply_to_process = false});
     if (result) {
         std::cout << "Loaded " << *result << " variables\n";
     } else {
-        std::cout << "Error: " << dotenv_get_error_message(result.error()) << "\n";
+        std::cout << "Error: " << static_cast<int>(result.error()) << "\n";
     }
 
     // Monadic operations
-    auto config = dotenv::load_expected(".env")
+    auto config = dotenv::load(".env", {})
         .and_then([](int count) { return process_config(count); })
         .or_else([](auto error) { return use_defaults(error); });
     ```
 
-- **`std::expected<int, dotenv_error_t> dotenv::load_traditional_expected(...)`**
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load_traditional(path, options)`**
   Traditional implementation with std::expected.
 
-- **`std::expected<int, dotenv_error_t> dotenv::load_simd_expected(...)`** (if SIMD enabled)
+- **`std::expected<int, dotenv::dotenv_error> dotenv::load_simd(path, options)`** (if SIMD enabled)
   SIMD implementation with std::expected.
 
-#### Error Codes (`dotenv_errors.h`)
+#### Error Codes (`dotenv_types.h`)
 
 ```cpp
-typedef enum {
-    DOTENV_SUCCESS = 0,                    // Operation successful
-    DOTENV_ERROR_FILE_NOT_FOUND = -1,      // .env file not found
-    DOTENV_ERROR_PERMISSION_DENIED = -2,   // Permission denied
-    DOTENV_ERROR_INVALID_FORMAT = -3,      // Invalid file format
-    DOTENV_ERROR_OUT_OF_MEMORY = -4,       // Insufficient memory
-    DOTENV_ERROR_INVALID_ARGUMENT = -5,    // Invalid argument
-    DOTENV_ERROR_BUFFER_TOO_SMALL = -6     // Buffer too small
-} dotenv_error_t;
+namespace dotenv {
+enum class dotenv_error {
+    success = 0,                    // Operation successful
+    file_not_found = -1,           // .env file not found
+    permission_denied = -2,        // Permission denied
+    invalid_format = -3,           // Invalid file format
+    out_of_memory = -4,            // Insufficient memory
+    invalid_argument = -5,         // Invalid argument
+    buffer_too_small = -6,         // Buffer too small
+    key_not_found = -7             // Key not found in environment
+};
+}
 ```
 
 #### Variable Access Functions
@@ -277,13 +393,51 @@ typedef enum {
 - **`std::string_view dotenv::get(std::string_view key, std::string_view default_value = "")`**
   Retrieves the value of the given key or a default value if the key doesn't exist.
 
+- **`template<typename T> T dotenv::get(std::string_view key, T default_value = {})`**
+  Type-safe template version for numeric types (int, float, double, bool).
+  - Automatically parses string values to the requested type.
+  - Returns default_value if key not found or parsing fails.
+  - Example:
+    ```cpp
+    auto port = dotenv::get<int>("PORT", 3000);
+    auto timeout = dotenv::get<double>("TIMEOUT", 5.0);
+    auto debug = dotenv::get<bool>("DEBUG", false);
+    ```
+
+- **`std::optional<T> dotenv::try_value(std::string_view key)`**
+  Returns optional containing parsed value, or std::nullopt if not found/invalid.
+  - Example:
+    ```cpp
+    if (auto port = dotenv::try_value<int>("PORT")) {
+        std::cout << "Port: " << *port << "\n";
+    } else {
+        std::cout << "PORT not configured\n";
+    }
+    ```
+
+- **`std::expected<std::string, dotenv::dotenv_error> dotenv::value_expected(std::string_view key)`** (C++23)
+  Modern error handling for required variables.
+  - Returns expected containing value, or unexpected containing error.
+  - Example:
+    ```cpp
+    auto db_url = dotenv::value_expected("DATABASE_URL");
+    if (db_url) {
+        connect_to_database(*db_url);
+    } else {
+        std::cout << "DATABASE_URL required but not found\n";
+    }
+    ```
+
+- **`template<typename T> std::expected<T, dotenv::dotenv_error> dotenv::value_expected(std::string_view key)`** (C++23)
+  Type-safe version with parsing and error handling.
+
 - **`bool dotenv::has(std::string_view key)`**
   Checks if a key exists.
 
 - **`void dotenv::set(std::string_view key, std::string_view value, bool replace = true)`**
   Sets a key-value pair. Replaces the value if the key already exists and `replace` is true.
 
-- **`void dotenv::save(std::string_view path)`**
+- **`void dotenv::save_to_file(std::string_view path)`**
   Saves the current environment variables to the specified `.env` file.
 
 ### C API (`dotenv.h`)

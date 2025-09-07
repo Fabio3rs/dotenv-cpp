@@ -23,6 +23,13 @@ target_compile_features(test_process_env PRIVATE cxx_std_20)
 
 # Main test suite with gtest
 add_executable(dotenv_tests ${TEST_SOURCES})
-target_link_libraries(dotenv_tests dotenv_lib GTest::GTest GTest::Main)
-target_compile_features(dotenv_tests PRIVATE cxx_std_20)
+target_link_libraries(dotenv_tests dotenv_lib gtest gtest_main)
+target_compile_features(dotenv_tests PRIVATE cxx_std_${DOTENV_DETECTED_CXX_STANDARD})
+
+# Apply same compiler flags as the main project
+if(CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+    target_compile_options(dotenv_tests PRIVATE -stdlib=libc++)
+    target_link_libraries(dotenv_tests -stdlib=libc++ -lc++abi)
+endif()
+
 gtest_discover_tests(dotenv_tests)

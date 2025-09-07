@@ -7,7 +7,8 @@ void test_api_compatibility() {
     // 1. API clássica (sempre disponível)
     {
         std::cout << "1. API clássica (retorna int):\n";
-        auto [error, result] = dotenv::load("tests/test.env");
+        // structured binding expects pair style API
+        auto [error, result] = dotenv::load_legacy("tests/test.env");
         if (error == dotenv::dotenv_error::success && result > 0) {
             std::cout << "   ✅ Carregadas " << result << " variáveis\n";
         } else {
@@ -29,21 +30,23 @@ void test_api_compatibility() {
         }
     }
 
-#if __cplusplus >= 202302L
+#if DOTENV_HAS_STD_EXPECTED
     // 3. API moderna com std::expected (C++23)
     {
         std::cout << "\n3. API moderna com std::expected:\n";
-        auto result = dotenv::load_expected("tests/test.env");
-        if (result) {
-            std::cout << "   ✅ Sucesso: " << *result
+        // Use the modern std::expected API
+        auto result = dotenv::load("tests/test.env", {});
+        if (result.has_value()) {
+            std::cout << "   ✅ Sucesso: " << result.value()
                       << " variáveis carregadas\n";
 
-            ·· // Teste de programação funcional
-                auto doubled =
-                    result.transform([](int count) { return count * 2; });
-            std::cout << "   📊 Transform: " << *doubled << " (dobrado)\n";
-
-            ··
+            // Teste de programação funcional: transformar o valor
+            auto doubled =
+                result.transform([](int count) { return count * 2; });
+            if (doubled.has_value()) {
+                std::cout << "   📊 Transform: " << doubled.value()
+                          << " (dobrado)\n";
+            }
         } else {
             std::cout << "   ❌ Erro: "
                       << dotenv_get_error_message(
@@ -51,22 +54,22 @@ void test_api_compatibility() {
                       << "\n";
         }
 
-        · // Teste de fallback com or_else
-            auto fallback_result =
-                dotenv::load_expected("arquivo_inexistente.env")
-                    .or_else([](dotenv_error_t) {
-                        std::cout << "   🔧 Usando fallback...\n";
-                        return dotenv::load_expected("tests/test.env");
-                    });
+        // Teste de fallback com or_else
+        auto fallback_result =
+            dotenv::load("arquivo_inexistente.env", {})
+                .or_else([](dotenv::dotenv_error) {
+                    std::cout << "   🔧 Usando fallback...\n";
+                    return dotenv::load("tests/test.env", {});
+                });
 
-        · if (fallback_result) {
-            std::cout << "   ✅ Fallback bem-sucedido: " << *fallback_result
-                      << " variáveis\n";
+        if (fallback_result.has_value()) {
+            std::cout << "   ✅ Fallback bem-sucedido: "
+                      << fallback_result.value() << " variáveis\n";
         }
 
-        · // Teste de value_or
-            int safe_count =
-                dotenv::load_expected("arquivo_inexistente.env").value_or(0);
+        // Teste de value_or
+        int safe_count =
+            dotenv::load("arquivo_inexistente.env", {}).value_or(0);
         std::cout << "   📝 Value_or: " << safe_count << " (valor padrão)\n";
     }
 #else
@@ -86,10 +89,17 @@ void test_api_compatibility() {
     std::cout << "\n=== Teste de compatibilidade concluído! ===\n";
 }
 
-int main() {
+auto main() -> int {
     std::cout << "🚀 Testando APIs de tratamento de erro\n";
+#ifdef __clang__
+    std::cout << "Compilador: Clang " << __clang_major__ << "."
+              << __clang_minor__ << "\n";
+#elif defined(__GNUC__)
     std::cout << "Compilador: GCC " << __GNUC__ << "." << __GNUC_MINOR__
               << "\n";
+#else
+    std::cout << "Compilador: Desconhecido\n";
+#endif
     std::cout << "C++: " << __cplusplus << "\n\n";
 
     test_api_compatibility();

@@ -4,8 +4,8 @@
 auto main() -> int {
     std::cout << "Hello, World!" << '\n';
 
-    // Use the new C++20 API with type-safe configuration
-    auto [error, count] = dotenv::load(".env");
+    // Use legacy pair-returning API when structured bindings are desired
+    auto [error, count] = dotenv::load_legacy(".env");
 
     if (error == dotenv::dotenv_error::success) {
         std::cout << "Loaded " << count << " variables successfully" << '\n';

@@ -15,7 +15,7 @@ void test_process_env_functions() {
             .apply_to_process = dotenv::process_env_apply::no,
             .backend = dotenv::parse_backend::auto_detect};
 
-        auto [error, count] = dotenv::load("tests/test.env", opts);
+        auto [error, count] = dotenv::load_legacy("tests/test.env", opts);
 
         if (error == dotenv::dotenv_error::success) {
             std::cout << "   ✅ Carregadas " << count
@@ -111,7 +111,7 @@ void test_process_env_functions() {
         << "\n=== ✨ Teste de apply_internal_to_process_env() concluído! ===\n";
 }
 
-int main() {
+auto main() -> int {
     std::cout << "🎯 Demonstração da Nova API de Processo\n";
     std::cout << "Função: apply_internal_to_process_env()\n";
     std::cout << "Compilador: " <<

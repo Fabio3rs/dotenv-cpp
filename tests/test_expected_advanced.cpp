@@ -2,7 +2,7 @@
 #include <cassert>
 #include <iostream>
 
-#if __cplusplus >= 202302L
+#if defined(DOTENV_HAS_STD_EXPECTED)
 #include <expected>
 
 void test_monadic_operations() {
@@ -12,7 +12,7 @@ void test_monadic_operations() {
     {
         std::cout << "1. 📋 Pipeline de carregamento com validação:\n";
         auto pipeline =
-            dotenv::load_expected("tests/test.env")
+            dotenv::load("tests/test.env", {})
                 .transform([](int count) {
                     std::cout << "   🔄 Etapa 1: Carregadas " << count
                               << " variáveis\n";
@@ -27,11 +27,10 @@ void test_monadic_operations() {
                     return count * 10; // Score de qualidade
                 });
 
-        · if (pipeline) {
+        if (pipeline) {
             std::cout << "   ✅ Pipeline concluído! Score: " << *pipeline
                       << "\n\n";
-        }
-        else {
+        } else {
             std::cout << "   ❌ Pipeline falhou!\n\n";
         }
     }
@@ -40,31 +39,28 @@ void test_monadic_operations() {
     {
         std::cout << "2. 🏗️ Sistema de fallback em cascata:\n";
         auto robust_load =
-            dotenv::load_expected("config.env")
-                .or_else(
-                    [](dotenv_error_t) -> std::expected<int, dotenv_error_t> {
-                        std::cout
-                            << "   🔧 Tentativa 1: Usando .env.local...\n";
-                        return dotenv::load_expected(".env.local");
-                    })
-                .or_else(
-                    [](dotenv_error_t) -> std::expected<int, dotenv_error_t> {
-                        std::cout
-                            << "   🔧 Tentativa 2: Usando .env padrão...\n";
-                        return dotenv::load_expected(".env");
-                    })
-                .or_else([](dotenv_error_t)
-                             -> std::expected<int, dotenv_error_t> {
+            dotenv::load("config.env", {})
+                .or_else([](dotenv::dotenv_error)
+                             -> std::expected<int, dotenv::dotenv_error> {
+                    std::cout << "   🔧 Tentativa 1: Usando .env.local...\n";
+                    return dotenv::load(".env.local", {});
+                })
+                .or_else([](dotenv::dotenv_error)
+                             -> std::expected<int, dotenv::dotenv_error> {
+                    std::cout << "   🔧 Tentativa 2: Usando .env padrão...\n";
+                    return dotenv::load(".env", {});
+                })
+                .or_else([](dotenv::dotenv_error)
+                             -> std::expected<int, dotenv::dotenv_error> {
                     std::cout
                         << "   🔧 Tentativa 3: Usando arquivo de teste...\n";
-                    return dotenv::load_expected("tests/test.env");
+                    return dotenv::load("tests/test.env", {});
                 });
 
-        · if (robust_load) {
+        if (robust_load) {
             std::cout << "   ✅ Carregamento robusto bem-sucedido: "
                       << *robust_load << " variáveis\n\n";
-        }
-        else {
+        } else {
             std::cout << "   ❌ Todos os fallbacks falharam!\n\n";
         }
     }
@@ -73,23 +69,25 @@ void test_monadic_operations() {
     {
         std::cout << "3. 🔗 Composição de múltiplas operações:\n";
         auto composite =
-            dotenv::load_expected("tests/test.env")
-                .and_then([](int count)
-                              -> std::expected<std::string, dotenv_error_t> {
-                    std::cout << "   🔄 Processando " << count
-                              << " variáveis...\n";
-                    if (count > 0) {
-                        return std::string("Configuração válida com ") +
-                               std::to_string(count) + " vars";
-                    }
-                    return std::unexpected(DOTENV_ERROR_INVALID_FORMAT);
-                })
+            dotenv::load("tests/test.env")
+                .and_then(
+                    [](int count)
+                        -> std::expected<std::string, dotenv::dotenv_error> {
+                        std::cout << "   🔄 Processando " << count
+                                  << " variáveis...\n";
+                        if (count > 0) {
+                            return std::string("Configuração válida com ") +
+                                   std::to_string(count) + " vars";
+                        }
+                        return std::unexpected(
+                            dotenv::dotenv_error::invalid_format);
+                    })
                 .transform([](const std::string &msg) {
                     std::cout << "   📝 Mensagem gerada: " << msg << "\n";
                     return msg.length();
                 });
 
-        · if (composite) {
+        if (composite) {
             std::cout << "   ✅ Composição concluída! Tamanho da mensagem: "
                       << *composite << "\n\n";
         }
@@ -99,49 +97,50 @@ void test_monadic_operations() {
     {
         std::cout << "4. ⚡ Tratamento funcional de erros:\n";
 
-        · auto safe_operation =
+        auto safe_operation =
             [](const std::string &filename) -> std::expected<int, std::string> {
-            auto result = dotenv::load_expected(filename);
+            auto result = dotenv::load(filename, {});
             if (result) {
                 return *result;
             } else {
                 return std::unexpected(
                     std::string("Falha ao carregar ") + filename + ": " +
-                    dotenv_get_error_message(result.error()));
+                    dotenv_get_error_message(static_cast<dotenv_error_t>(
+                        static_cast<int>(result.error()))));
             }
         };
 
-        · // Teste com arquivo inexistente
-            auto error_case = safe_operation("arquivo_inexistente.env");
+        // Teste com arquivo inexistente
+        auto error_case = safe_operation("arquivo_inexistente.env");
         if (!error_case) {
             std::cout << "   ⚠️  Erro capturado: " << error_case.error() << "\n";
         }
 
-        · // Teste com arquivo válido
-            auto success_case = safe_operation("tests/test.env");
+        // Teste com arquivo válido
+        auto success_case = safe_operation("tests/test.env");
         if (success_case) {
             std::cout << "   ✅ Sucesso: " << *success_case << " variáveis\n";
         }
 
-        · std::cout << "\n";
+        std::cout << "\n";
     }
 
     // 5. Value extraction com defaults inteligentes
     {
         std::cout << "5. 🎯 Value extraction com defaults inteligentes:\n";
 
-        · auto get_config_count = []() {
-            return dotenv::load_expected("production.env")
-                .or_else([](dotenv_error_t) {
-                    return dotenv::load_expected("staging.env");
+        auto get_config_count = []() {
+            return dotenv::load("production.env")
+                .or_else([](dotenv::dotenv_error) {
+                    return dotenv::load("staging.env", {});
                 })
-                .or_else([](dotenv_error_t) {
-                    return dotenv::load_expected("tests/test.env");
+                .or_else([](dotenv::dotenv_error) {
+                    return dotenv::load("tests/test.env", {});
                 })
                 .value_or(-1);
         };
 
-        · int config_vars = get_config_count();
+        int config_vars = get_config_count();
         if (config_vars > 0) {
             std::cout << "   ✅ Configuração carregada: " << config_vars
                       << " variáveis\n";
@@ -151,7 +150,7 @@ void test_monadic_operations() {
             std::cout << "   ❌ Nenhuma configuração disponível\n";
         }
 
-        · std::cout << "\n";
+        std::cout << "\n";
     }
 
     std::cout << "=== ✨ Todos os testes de std::expected concluídos! ===\n";
@@ -164,7 +163,7 @@ void test_monadic_operations() {
 }
 #endif
 
-int main() {
+auto main() -> int {
     std::cout << "🎯 Demonstração Avançada de C++23 std::expected\n";
     std::cout << "Compilador: " <<
 #ifdef __clang__

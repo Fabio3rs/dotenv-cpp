@@ -22,8 +22,21 @@ endif()
 # Enable verbose feature detection
 add_compile_definitions(DOTENV_VERBOSE_FEATURES=1)
 
+# Try to find dotenv via find_package first (for installed library)
+# But only if we're building standalone (not as part of main project)
+if(NOT TARGET dotenv_lib)
+    find_package(dotenv QUIET)
+endif()
+
 add_executable(modern_cpp20_example main.cpp)
-target_link_libraries(modern_cpp20_example dotenv_lib)
+
+if(TARGET dotenv::dotenv_lib)
+    target_link_libraries(modern_cpp20_example dotenv::dotenv_lib)
+elseif(TARGET dotenv_lib)
+    target_link_libraries(modern_cpp20_example dotenv_lib)
+else()
+    message(FATAL_ERROR "❌ No dotenv library found")
+endif()
 
 # Copy configuration files
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.env ${CMAKE_CURRENT_BINARY_DIR}/config.env COPYONLY)

@@ -2,7 +2,9 @@
 
 #include "dotenv_errors.h"
 #include "dotenv_types.h"
+#include <cerrno>
 #include <charconv>
+#include <cstdlib>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -10,12 +12,42 @@
 #include <system_error>
 #include <utility>
 
-// C++23 std::expected support with robust feature detection
-#if __cplusplus >= 202302L && __has_include(<expected>) && defined(__cpp_lib_expected)
-#include <expected>
+// C++23 std::expected support (controlled by CMake detection)
+#ifndef DOTENV_HAS_EXPECTED
+// Fallback detection if CMake didn't set it. Use feature-test macro if
+// available and check for the header as a secondary measure.
+#if defined(__has_include)
+#if __has_include(<expected>) && (defined(__cpp_lib_expected) || (__cplusplus >= 202300L))
 #define DOTENV_HAS_EXPECTED 1
 #else
 #define DOTENV_HAS_EXPECTED 0
+#endif
+#else
+#define DOTENV_HAS_EXPECTED 0
+#endif
+#endif
+
+// Carefully enable std::expected only when both the build system claims
+// support (DOTENV_HAS_EXPECTED) and the header/feature test is actually
+// available in this compilation environment. This avoids mismatches when
+// CMake detection is optimistic but the standard library doesn't provide
+// the expected implementation for this toolchain.
+#if defined(DOTENV_HAS_EXPECTED) && (DOTENV_HAS_EXPECTED)
+#if defined(__has_include)
+#if __has_include(<expected>) && (defined(__cpp_lib_expected) || (__cplusplus >= 202300L))
+#include <expected>
+#define DOTENV_HAS_STD_EXPECTED 1
+#else
+/* Header missing or feature macro not present */
+#define DOTENV_HAS_STD_EXPECTED 0
+#endif
+#else
+/* Conservative fallback: if DOTENV_HAS_EXPECTED is set but we
+   can't test for header presence, assume not available. */
+#define DOTENV_HAS_STD_EXPECTED 0
+#endif
+#else
+#define DOTENV_HAS_STD_EXPECTED 0
 #endif
 
 // Include SIMD header if available
@@ -38,91 +70,57 @@ inline void errc_to_exception(std::errc error_code, std::string_view value) {
     }
 }
 
+// ==== Process Environment Application ====
+
+/**
+ * @brief Apply internally stored variables to process environment
+ * @param overwrite_policy Policy for existing variables
+ * @note Modern interface for applying loaded variables to process environment
+ */
+void apply_internal_to_process_env(
+    overwrite overwrite_policy = overwrite::replace);
+
+// Legacy compatibility wrapper
+[[deprecated("Use apply_internal_to_process_env(overwrite) instead")]]
+inline void write_system_env_from_env_map(int replace = 1) {
+    apply_internal_to_process_env((replace != 0) ? overwrite::replace
+                                                 : overwrite::preserve);
+}
+
 // ==== Core C++20 API (Primary Interface) ====
-
+// When C++23 std::expected is available we expose the modern APIs below.
+// To avoid functions that differ only by return type, the legacy pair-returning
+// overloads are only declared when std::expected is NOT available.
+// Legacy C++20 pair-returning APIs (renamed). These provide the older
+// std::pair-based interface and are intended for code that hasn't migrated
+// to the C++23 std::expected APIs; names end with `_legacy` to avoid
+// overloads that differ only by return type.
 /**
- * @brief Load environment variables from file (C++20 standard API)
- * @param path Path to the .env file (default: ".env")
- * @param options Load configuration with type-safe enum options
- * @return std::pair<dotenv_error, int> where first is status and second is
- * variables count
- * @note This is the primary C++20 interface with type-safe configuration
- * @note On success, returns {dotenv_error::success, count}. On error, returns
- * {error_code, 0}
- */
-std::pair<dotenv_error, int> load(std::string_view path = ".env",
-                                  const load_options &options = {}) noexcept;
-
-/**
- * @brief Load environment variables with traditional backend (C++20 API)
- * @param path Path to .env file
- * @param options Load configuration options (backend will be forced to
- * traditional)
- * @return std::pair<dotenv_error, int> where first is status and second is
- * variables count
- * @note This function bypasses SIMD auto-detection and uses traditional file
- * parsing
+ * @brief Legacy pair-returning load API (renamed)
  */
 std::pair<dotenv_error, int>
-load_traditional(std::string_view path = ".env",
+load_legacy(std::string_view path = ".env",
+            const load_options &options = {}) noexcept;
+
+/**
+ * @brief Legacy pair-returning load_traditional API (renamed)
+ */
+std::pair<dotenv_error, int>
+load_traditional_legacy(std::string_view path = ".env",
+                        const load_options &options = {}) noexcept;
+
+#ifdef DOTENV_SIMD_ENABLED
+/**
+ * @brief Legacy pair-returning SIMD API (renamed)
+ */
+std::pair<dotenv_error, int>
+load_simd_legacy(std::string_view path = ".env",
                  const load_options &options = {}) noexcept;
-
-#ifdef DOTENV_SIMD_ENABLED
-/**
- * @brief Load .env file with SIMD optimization when available (C++20 API)
- * @param path Path to .env file
- * @param options Load configuration options (backend will be forced to simd)
- * @return std::pair<dotenv_error, int> where first is status and second is
- * variables count
- * @note This function forces SIMD usage even for small files
- */
-std::pair<dotenv_error, int>
-load_simd(std::string_view path = ".env",
-          const load_options &options = {}) noexcept;
 #endif
 
-// ==== C++23 Enhanced API (Optional) ====
-
-#if DOTENV_HAS_EXPECTED
-/**
- * @brief Load environment variables with std::expected (C++23+ enhanced API)
- * @param path Path to the .env file (default: ".env")
- * @param options Load configuration options
- * @return std::expected<int, dotenv_error> where value is variables loaded
- * count, or error
- * @note This function provides modern C++23 error handling using std::expected
- * @note On success, returns expected containing variable count. On error,
- * returns unexpected containing error code
- */
-std::expected<int, dotenv_error>
-load_expected(std::string_view path = ".env",
-              const load_options &options = {}) noexcept;
-
-/**
- * @brief Load with traditional backend (C++23 enhanced API)
- * @param path Path to .env file
- * @param options Load configuration options (backend will be forced to
- * traditional)
- * @return std::expected<int, dotenv_error> where value is variables loaded
- * count, or error
- */
-std::expected<int, dotenv_error>
-load_traditional_expected(std::string_view path = ".env",
-                          const load_options &options = {}) noexcept;
-
-#ifdef DOTENV_SIMD_ENABLED
-/**
- * @brief Load with SIMD backend (C++23 enhanced API)
- * @param path Path to .env file
- * @param options Load configuration options (backend will be forced to simd)
- * @return std::expected<int, dotenv_error> where value is variables loaded
- * count, or error
- */
-std::expected<int, dotenv_error>
-load_simd_expected(std::string_view path = ".env",
-                   const load_options &options = {}) noexcept;
-#endif
-#endif // DOTENV_HAS_EXPECTED
+// Note: modern std::expected-based APIs are declared in the 'Modern Load'
+// section below (names: load, load_traditional, load_simd). The legacy
+// pair-returning APIs are available as *_legacy names.
 
 /**
  * @brief Apply internal environment variables to the current process
@@ -136,12 +134,10 @@ load_simd_expected(std::string_view path = ".env",
  * @note overwrite::replace maps to setenv(name, val, overwrite=1)
  * @note overwrite::preserve maps to setenv(name, val, overwrite=0)
  */
-void apply_internal_to_process_env(
-    overwrite overwrite_policy = overwrite::replace);
 
 // ==== Modern Load API (Primary Interface) ====
 
-#if DOTENV_HAS_EXPECTED
+#if DOTENV_HAS_STD_EXPECTED
 /**
  * @brief Load environment variables from file with modern type-safe API
  * (C++23+)
@@ -154,7 +150,19 @@ void apply_internal_to_process_env(
  */
 std::expected<int, dotenv::dotenv_error>
 load(std::string_view path, const load_options &options = {}) noexcept;
-#endif // DOTENV_HAS_EXPECTED
+
+/**
+ * @brief Modern std::expected-based traditional backend
+ */
+std::expected<int, dotenv::dotenv_error>
+load_traditional(std::string_view path,
+                 const load_options &options = {}) noexcept;
+
+#ifdef DOTENV_SIMD_ENABLED
+std::expected<int, dotenv::dotenv_error>
+load_simd(std::string_view path, const load_options &options = {}) noexcept;
+#endif
+#endif // DOTENV_HAS_STD_EXPECTED
 
 /**
  * @brief Load environment variables with detailed status information
@@ -170,21 +178,8 @@ load_status(std::string_view path = ".env",
             const load_options &options = {}) noexcept;
 
 // C++23 std::expected API - Modern error handling
-#if DOTENV_HAS_EXPECTED
-/**
- * @brief Load environment variables with std::expected (C++23+)
- * @param path Path to the .env file (default: ".env")
- * @param options Load configuration options
- * @return std::expected<int, dotenv_error_t> where value is variables loaded
- * count, or error
- * @note This function provides modern C++23 error handling using std::expected
- * @note On success, returns expected containing variable count. On error,
- * returns unexpected containing error code
- */
-std::expected<int, dotenv_error_t>
-load_expected(std::string_view path = ".env",
-              const load_options &options = {}) noexcept;
-#endif // DOTENV_HAS_EXPECTED
+// NOTE: modern std::expected-based APIs are declared elsewhere above/below
+// under the DOTENV_HAS_EXPECTED guard. Avoid duplicating prototypes here.
 
 // ==== Legacy/Compatibility API ====
 
@@ -239,13 +234,9 @@ void set(std::string_view key, std::string_view value, bool replace);
  * @note This function bypasses SIMD auto-detection and uses traditional file
  * parsing
  */
-#if DOTENV_HAS_EXPECTED
-std::expected<int, dotenv::dotenv_error>
-load_traditional(std::string_view path, const load_options &options) noexcept;
-#endif // DOTENV_HAS_EXPECTED
-
-#ifdef DOTENV_SIMD_ENABLED
-#endif
+// Note: SIMD-specific prototypes are declared above when DOTENV_SIMD_ENABLED is
+// set and when DOTENV_HAS_EXPECTED is true (inside the Modern Load API guard).
+// No additional prototypes are required here.
 
 // ==== Variable Access API (Consistent Naming) ====
 
@@ -319,6 +310,47 @@ void save_to_file(std::string_view path);
 
 // ==== Numeric Type Conversion Templates ====
 
+// Helper: parse arithmetic values from string_view
+// Uses std::from_chars for integral types and the C library for floating
+// point types as libc++ may not provide from_chars for floating values.
+template <class T>
+inline bool parse_arithmetic_from_string(std::string_view str,
+                                         T &out) noexcept {
+    if (str.empty()) {
+        return false;
+    }
+
+    if constexpr (std::is_integral_v<T>) {
+        auto [ptr, ec] =
+            std::from_chars(str.data(), str.data() + str.size(), out);
+        (void)ptr;
+        return (ec == std::errc{});
+    } else if constexpr (std::is_floating_point_v<T>) {
+        // Use a temporary null-terminated buffer for the C functions.
+        std::string tmp(str);
+        const char *cstr = tmp.c_str();
+        char *endptr = nullptr;
+        errno = 0;
+        if constexpr (std::is_same_v<T, float>) {
+            out = std::strtof(cstr, &endptr);
+        } else if constexpr (std::is_same_v<T, double>) {
+            out = std::strtod(cstr, &endptr);
+        } else {
+            out = std::strtold(cstr, &endptr);
+        }
+        const size_t parsed_len = static_cast<size_t>(endptr - cstr);
+        if (parsed_len != tmp.size()) {
+            return false; // trailing garbage or partial parse
+        }
+        if (errno == ERANGE) {
+            return false; // out of range
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
 /**
  * @brief Get environment variable value with fallback (never throws)
  * @param key Variable name to retrieve
@@ -336,11 +368,7 @@ inline T value_or(std::string_view key, T fallback_value) noexcept {
     }
 
     T result{};
-    auto [ptr, error_code] = std::from_chars(
-        value_str.data(), value_str.data() + value_str.size(), result);
-
-    // Check for parsing errors or out-of-range values
-    if (error_code != std::errc{}) {
+    if (!parse_arithmetic_from_string<T>(value_str, result)) {
         return fallback_value;
     }
 
@@ -365,11 +393,10 @@ inline T value_required(std::string_view key) {
     }
 
     T result{};
-    auto [ptr, error_code] = std::from_chars(
-        value_str.data(), value_str.data() + value_str.size(), result);
-
-    if (error_code != std::errc{}) {
-        errc_to_exception(error_code, value_str);
+    if (!parse_arithmetic_from_string<T>(value_str, result)) {
+        // Map parsing failures to appropriate exceptions
+        throw std::invalid_argument("Invalid numeric format: " +
+                                    std::string(value_str));
     }
 
     return result;
@@ -392,10 +419,7 @@ inline std::optional<T> try_value(std::string_view key) noexcept {
     }
 
     T result{};
-    auto [ptr, error_code] = std::from_chars(
-        value_str.data(), value_str.data() + value_str.size(), result);
-
-    if (error_code != std::errc{}) {
+    if (!parse_arithmetic_from_string<T>(value_str, result)) {
         return std::nullopt;
     }
 
@@ -404,7 +428,7 @@ inline std::optional<T> try_value(std::string_view key) noexcept {
 
 // ==== C++23 Enhanced Get API ====
 
-#if DOTENV_HAS_EXPECTED
+#if DOTENV_HAS_STD_EXPECTED
 /**
  * @brief Get required environment variable value with std::expected (C++23+)
  * @param key Variable name to retrieve
@@ -443,7 +467,7 @@ inline std::expected<T, dotenv_error> value_expected(std::string_view key) {
 
     return result;
 }
-#endif // DOTENV_HAS_EXPECTED
+#endif // DOTENV_HAS_STD_EXPECTED
 
 // ==== Legacy API Compatibility (Minimal Deprecated Aliases) ====
 

@@ -7,7 +7,9 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#if DOTENV_HAS_STD_EXPECTED
 #include <expected>
+#endif
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -22,6 +24,22 @@
 #include "dotenv_mmap.hpp"
 #include "dotenv_simd.hpp"
 #endif
+
+// Forward declarations for internal/renamed functions to satisfy out-of-line
+// definitions and internal callsites.
+namespace dotenv {
+auto load_raw(std::string_view path, int replace,
+              bool apply_system_env) noexcept -> int;
+auto load_traditional_raw(std::string_view path, int replace,
+                          bool apply_system_env) noexcept -> int;
+std::pair<dotenv::dotenv_error, int>
+load_legacy(std::string_view path, const load_options &options) noexcept;
+std::pair<dotenv::dotenv_error, int>
+load_traditional_legacy(std::string_view path,
+                        const load_options &options) noexcept;
+std::pair<dotenv::dotenv_error, int>
+load_simd_legacy(std::string_view path, const load_options &options) noexcept;
+} // namespace dotenv
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -334,7 +352,7 @@ inline void processLine(std::string_view line, [[maybe_unused]] int replace,
 
 extern "C" {
 /* Helper function to parse boolean values */
-static int parse_bool(const char *value, int default_value) {
+static auto parse_bool(const char *value, int default_value) -> int {
     if (value == nullptr) {
         return default_value;
     }
@@ -356,38 +374,38 @@ static int parse_bool(const char *value, int default_value) {
 }
 
 /* Core loading functions */
-int dotenv_load(const char *path, int replace, int apply_system_env) {
-    const char *file_path = path ? path : ".env";
-    return dotenv::load(file_path, replace, apply_system_env != 0);
+auto dotenv_load(const char *path, int replace, int apply_system_env) -> int {
+    const char *file_path = (path != nullptr) ? path : ".env";
+    return dotenv::load_raw(file_path, replace, apply_system_env != 0);
 }
 
-dotenv_error_t dotenv_load_ex(const char *path,
-                              const dotenv_load_options_t *options,
-                              dotenv_load_stats_t *stats) {
-    if (!path)
+auto dotenv_load_ex(const char *path, const dotenv_load_options_t *options,
+                    dotenv_load_stats_t *stats) -> dotenv_error_t {
+    if (path == nullptr) {
         path = ".env";
+    }
 
     // Initialize stats if provided
-    if (stats) {
+    if (stats != nullptr) {
         memset(stats, 0, sizeof(*stats));
     }
 
     // Use default options if not provided
     dotenv_load_options_t default_opts;
-    if (!options) {
+    if (options == nullptr) {
         dotenv_get_default_options(&default_opts);
         options = &default_opts;
     }
 
     try {
-        int result = dotenv::load(path, options->replace_existing,
-                                  options->apply_to_system != 0);
+        int result = dotenv::load_raw(path, options->replace_existing,
+                                      options->apply_to_system != 0);
 
         if (result < 0) {
             return static_cast<dotenv_error_t>(result);
         }
 
-        if (stats) {
+        if (stats != nullptr) {
             stats->variables_loaded = result;
             // Additional stats would need implementation in the core library
         }
@@ -398,16 +416,18 @@ dotenv_error_t dotenv_load_ex(const char *path,
     }
 }
 
-int dotenv_load_traditional(const char *path, int replace,
-                            int apply_system_env) {
-    const char *file_path = path ? path : ".env";
-    return dotenv::load_traditional(file_path, replace, apply_system_env != 0);
+auto dotenv_load_traditional(const char *path, int replace,
+                             int apply_system_env) -> int {
+    const char *file_path = (path != nullptr) ? path : ".env";
+    return dotenv::load_traditional_raw(file_path, replace,
+                                        apply_system_env != 0);
 }
 
 /* Variable access functions */
-const char *dotenv_get(const char *key, const char *default_value) {
-    if (!key)
-        return default_value ? default_value : "";
+auto dotenv_get(const char *key, const char *default_value) -> const char * {
+    if (key == nullptr) {
+        return (default_value != nullptr) ? default_value : "";
+    }
 
     std::lock_guard<std::mutex> lock(envMapMutex);
 
@@ -419,19 +439,22 @@ const char *dotenv_get(const char *key, const char *default_value) {
     }
 
     auto *value = getenv(key);
-    return (value != nullptr) ? value : (default_value ? default_value : "");
+    return (value != nullptr)
+               ? value
+               : ((default_value != nullptr) ? default_value : "");
 }
 
-dotenv_error_t dotenv_get_buffer(const char *key, char *buffer,
-                                 size_t buffer_size) {
-    if (!key || !buffer || buffer_size == 0) {
+auto dotenv_get_buffer(const char *key, char *buffer, size_t buffer_size)
+    -> dotenv_error_t {
+    if ((key == nullptr) || (buffer == nullptr) || buffer_size == 0) {
         return DOTENV_ERROR_INVALID_ARGUMENT;
     }
 
     const char *value = dotenv_get(key, nullptr);
-    if (!value) {
-        if (buffer_size > 0)
+    if (value == nullptr) {
+        if (buffer_size > 0) {
             buffer[0] = '\0';
+        }
         return DOTENV_SUCCESS;
     }
 
@@ -444,18 +467,20 @@ dotenv_error_t dotenv_get_buffer(const char *key, char *buffer,
     return DOTENV_SUCCESS;
 }
 
-int dotenv_has(const char *key) {
-    if (!key)
+auto dotenv_has(const char *key) -> int {
+    if (key == nullptr) {
         return 0;
-    return dotenv::has(key) ? 1 : 0;
+    }
+    return dotenv::contains(key) ? 1 : 0;
 }
 
-int dotenv_get_int(const char *key, int default_value) {
+auto dotenv_get_int(const char *key, int default_value) -> int {
     const char *value = dotenv_get(key, nullptr);
-    if (!value || *value == '\0')
+    if ((value == nullptr) || *value == '\0') {
         return default_value;
+    }
 
-    char *endptr;
+    char *endptr = nullptr;
     long result = strtol(value, &endptr, 10);
 
     // Check for conversion errors or overflow
@@ -466,12 +491,13 @@ int dotenv_get_int(const char *key, int default_value) {
     return static_cast<int>(result);
 }
 
-long dotenv_get_long(const char *key, long default_value) {
+auto dotenv_get_long(const char *key, long default_value) -> long {
     const char *value = dotenv_get(key, nullptr);
-    if (!value || *value == '\0')
+    if ((value == nullptr) || *value == '\0') {
         return default_value;
+    }
 
-    char *endptr;
+    char *endptr = nullptr;
     long result = strtol(value, &endptr, 10);
 
     if (*endptr != '\0') {
@@ -481,12 +507,13 @@ long dotenv_get_long(const char *key, long default_value) {
     return result;
 }
 
-double dotenv_get_double(const char *key, double default_value) {
+auto dotenv_get_double(const char *key, double default_value) -> double {
     const char *value = dotenv_get(key, nullptr);
-    if (!value || *value == '\0')
+    if ((value == nullptr) || *value == '\0') {
         return default_value;
+    }
 
-    char *endptr;
+    char *endptr = nullptr;
     double result = strtod(value, &endptr);
 
     if (*endptr != '\0') {
@@ -496,14 +523,15 @@ double dotenv_get_double(const char *key, double default_value) {
     return result;
 }
 
-int dotenv_get_bool(const char *key, int default_value) {
+auto dotenv_get_bool(const char *key, int default_value) -> int {
     const char *value = dotenv_get(key, nullptr);
     return parse_bool(value, default_value);
 }
 
 /* Variable modification functions */
-dotenv_error_t dotenv_set(const char *key, const char *value, int replace) {
-    if (!key || !value) {
+auto dotenv_set(const char *key, const char *value, int replace)
+    -> dotenv_error_t {
+    if ((key == nullptr) || (value == nullptr)) {
         return DOTENV_ERROR_INVALID_ARGUMENT;
     }
 
@@ -517,8 +545,8 @@ dotenv_error_t dotenv_set(const char *key, const char *value, int replace) {
     }
 }
 
-dotenv_error_t dotenv_unset(const char *key) {
-    if (!key) {
+auto dotenv_unset(const char *key) -> dotenv_error_t {
+    if (key == nullptr) {
         return DOTENV_ERROR_INVALID_ARGUMENT;
     }
 
@@ -531,8 +559,8 @@ dotenv_error_t dotenv_unset(const char *key) {
 }
 
 /* File operations */
-dotenv_error_t dotenv_save(const char *path) {
-    const char *file_path = path ? path : ".env";
+auto dotenv_save(const char *path) -> dotenv_error_t {
+    const char *file_path = (path != nullptr) ? path : ".env";
 
     try {
         dotenv::save(file_path);
@@ -544,8 +572,9 @@ dotenv_error_t dotenv_save(const char *path) {
 
 /* Utility functions */
 void dotenv_get_default_options(dotenv_load_options_t *options) {
-    if (!options)
+    if (options == nullptr) {
         return;
+    }
 
     options->replace_existing = 1;
     options->apply_to_system = 1;
@@ -554,7 +583,7 @@ void dotenv_get_default_options(dotenv_load_options_t *options) {
     options->max_value_length = 0; // Use library default
 }
 
-const char *dotenv_get_error_message(dotenv_error_t error_code) {
+auto dotenv_get_error_message(dotenv_error_t error_code) -> const char * {
     switch (error_code) {
     case DOTENV_SUCCESS:
         return "Success";
@@ -575,22 +604,25 @@ const char *dotenv_get_error_message(dotenv_error_t error_code) {
     }
 }
 
-const char *dotenv_get_version(int *major, int *minor, int *patch) {
+auto dotenv_get_version(int *major, int *minor, int *patch) -> const char * {
     static const char *version = "2.0.0";
 
-    if (major)
+    if (major != nullptr) {
         *major = 2;
-    if (minor)
+    }
+    if (minor != nullptr) {
         *minor = 0;
-    if (patch)
+    }
+    if (patch != nullptr) {
         *patch = 0;
+    }
 
     return version;
 }
 
 /* Advanced functions */
-int dotenv_enumerate(dotenv_iterator_t iterator, void *user_data) {
-    if (!iterator) {
+auto dotenv_enumerate(dotenv_iterator_t iterator, void *user_data) -> int {
+    if (iterator == nullptr) {
         return DOTENV_ERROR_INVALID_ARGUMENT;
     }
 
@@ -607,10 +639,10 @@ int dotenv_enumerate(dotenv_iterator_t iterator, void *user_data) {
     return count;
 }
 
-dotenv_error_t dotenv_clear(int clear_system) {
+auto dotenv_clear(int clear_system) -> dotenv_error_t {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
-    if (clear_system) {
+    if (clear_system != 0) {
         // Clear from system environment
         for (const auto &[key, value] : envMap) {
             if (value.managedKey) {
@@ -639,8 +671,8 @@ void dotenv::apply_internal_to_process_env(overwrite overwrite_policy) {
     }
 }
 
-int dotenv::load(std::string_view path, int replace,
-                 bool apply_system_env) noexcept {
+auto dotenv::load_raw(std::string_view path, int replace,
+                      bool apply_system_env) noexcept -> int {
 #ifdef DOTENV_SIMD_ENABLED
     // Auto-detecção inteligente: usar SIMD sempre que disponível
 
@@ -666,8 +698,8 @@ int dotenv::load(std::string_view path, int replace,
             return std::nullopt; // Usar implementação tradicional
         }
 
-        // Use the modern API
-        auto [simd_error, simd_count] = load_simd(
+        // Use the legacy pair-returning SIMD API
+        auto [simd_error, simd_count] = load_simd_legacy(
             path, {.overwrite_policy = (replace != 0) ? overwrite::replace
                                                       : overwrite::preserve,
                    .apply_to_process = apply_system_env ? process_env_apply::yes
@@ -691,15 +723,15 @@ int dotenv::load(std::string_view path, int replace,
 }
 
 // Função pública para forçar implementação tradicional (benchmarking)
-int dotenv::load_traditional(std::string_view path, int replace,
-                             bool apply_system_env) noexcept {
+auto dotenv::load_traditional_raw(std::string_view path, int replace,
+                                  bool apply_system_env) noexcept -> int {
     return load_traditional_implementation(path, replace, apply_system_env);
 }
 
 auto dotenv::load_with_status(std::string_view path, int replace,
                               bool apply_system_env) noexcept
     -> std::pair<dotenv_error_t, int> {
-    int result = load(path, replace, apply_system_env);
+    int result = load_raw(path, replace, apply_system_env);
 
     if (result < 0) {
         // Convert negative error codes to enum
@@ -725,7 +757,7 @@ auto dotenv::load_with_status(std::string_view path, int replace,
 auto dotenv::load_traditional_with_status(std::string_view path, int replace,
                                           bool apply_system_env) noexcept
     -> std::pair<dotenv_error_t, int> {
-    int result = load_traditional(path, replace, apply_system_env);
+    int result = load_traditional_raw(path, replace, apply_system_env);
 
     if (result < 0) {
         // Convert negative error codes to enum
@@ -749,9 +781,9 @@ auto dotenv::load_traditional_with_status(std::string_view path, int replace,
 }
 
 // Implementação tradicional extraída para reutilização
-static auto
-load_traditional_implementation(std::string_view path, int replace,
-                                bool apply_system_env) noexcept -> int {
+static auto load_traditional_implementation(std::string_view path, int replace,
+                                            bool apply_system_env) noexcept
+    -> int {
 
     // Implementação padrão (fallback ou para arquivos pequenos)
     std::ifstream dotenv((std::filesystem::path(path)));
@@ -789,8 +821,8 @@ load_traditional_implementation(std::string_view path, int replace,
     return count;
 }
 
-auto dotenv::get(std::string_view key,
-                 std::string_view default_value) -> std::string_view {
+auto dotenv::get(std::string_view key, std::string_view default_value)
+    -> std::string_view {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -807,7 +839,8 @@ auto dotenv::get(std::string_view key,
 // ===== CORE C++20 API IMPLEMENTATIONS =====
 
 // Helper function to convert legacy int error codes to dotenv_error
-static dotenv::dotenv_error convert_error_code(int error_code) noexcept {
+static auto convert_error_code(int error_code) noexcept
+    -> dotenv::dotenv_error {
     switch (error_code) {
     case 0: // Success
         return dotenv::dotenv_error::success;
@@ -826,9 +859,10 @@ static dotenv::dotenv_error convert_error_code(int error_code) noexcept {
     }
 }
 
-// Primary C++20 load API
-std::pair<dotenv::dotenv_error, int>
-dotenv::load(std::string_view path, const load_options &options) noexcept {
+// Primary C++20 load API (renamed to legacy pair-returning)
+auto dotenv::load_legacy(std::string_view path,
+                         const load_options &options) noexcept
+    -> std::pair<dotenv::dotenv_error, int> {
     try {
         int replace_flag =
             (options.overwrite_policy == overwrite::replace) ? 1 : 0;
@@ -838,14 +872,14 @@ dotenv::load(std::string_view path, const load_options &options) noexcept {
         int result = 0;
         switch (options.backend) {
         case parse_backend::auto_detect:
-            result = load(path, replace_flag, apply_to_env);
+            result = load_raw(path, replace_flag, apply_to_env);
             break;
         case parse_backend::traditional:
-            result = load_traditional(path, replace_flag, apply_to_env);
+            result = load_traditional_raw(path, replace_flag, apply_to_env);
             break;
 #ifdef DOTENV_SIMD_ENABLED
         case parse_backend::simd: {
-            auto [simd_error, simd_count] = load_simd(
+            auto [simd_error, simd_count] = load_simd_legacy(
                 path,
                 {.overwrite_policy = (replace_flag == 1) ? overwrite::replace
                                                          : overwrite::preserve,
@@ -856,12 +890,12 @@ dotenv::load(std::string_view path, const load_options &options) noexcept {
             if (simd_error == dotenv::dotenv_error::success) {
                 result = simd_count;
             } else {
-                result = load_traditional(path, replace_flag, apply_to_env);
+                result = load_traditional_raw(path, replace_flag, apply_to_env);
             }
         } break;
 #else
         case parse_backend::simd:
-            result = load_traditional(path, replace_flag, apply_to_env);
+            result = load_traditional_raw(path, replace_flag, apply_to_env);
             break;
 #endif
         }
@@ -877,16 +911,16 @@ dotenv::load(std::string_view path, const load_options &options) noexcept {
 }
 
 // Traditional backend (C++20 API)
-std::pair<dotenv::dotenv_error, int>
-dotenv::load_traditional(std::string_view path,
-                         const load_options &options) noexcept {
+auto dotenv::load_traditional_legacy(std::string_view path,
+                                     const load_options &options) noexcept
+    -> std::pair<dotenv::dotenv_error, int> {
     try {
         int replace_flag =
             (options.overwrite_policy == overwrite::replace) ? 1 : 0;
         bool apply_to_env =
             (options.apply_to_process == process_env_apply::yes);
 
-        int result = load_traditional(path, replace_flag, apply_to_env);
+        int result = load_traditional_raw(path, replace_flag, apply_to_env);
 
         if (result < 0) {
             return {convert_error_code(result), 0};
@@ -899,9 +933,10 @@ dotenv::load_traditional(std::string_view path,
 }
 
 #ifdef DOTENV_SIMD_ENABLED
-// SIMD backend (C++20 API)
-std::pair<dotenv::dotenv_error, int>
-dotenv::load_simd(std::string_view path, const load_options &options) noexcept {
+// SIMD backend (legacy pair-returning)
+auto dotenv::load_simd_legacy(std::string_view path,
+                              const load_options &options) noexcept
+    -> std::pair<dotenv::dotenv_error, int> {
     try {
         int replace_flag =
             (options.overwrite_policy == overwrite::replace) ? 1 : 0;
@@ -912,9 +947,9 @@ dotenv::load_simd(std::string_view path, const load_options &options) noexcept {
         if (simd::is_avx2_available()) {
             // Use traditional implementation for now - SIMD implementation
             // needs to be updated
-            result = load_traditional(path, replace_flag, apply_to_env);
+            result = load_traditional_raw(path, replace_flag, apply_to_env);
         } else {
-            result = load_traditional(path, replace_flag, apply_to_env);
+            result = load_traditional_raw(path, replace_flag, apply_to_env);
         }
 
         if (result < 0) {
@@ -930,53 +965,57 @@ dotenv::load_simd(std::string_view path, const load_options &options) noexcept {
 
 // ===== C++23 ENHANCED API IMPLEMENTATIONS =====
 
-#if DOTENV_HAS_EXPECTED
+#if DOTENV_HAS_STD_EXPECTED
 // Enhanced C++23 load API with std::expected
 std::expected<int, dotenv::dotenv_error>
-dotenv::load_expected(std::string_view path,
-                      const load_options &options) noexcept {
-    auto [error, count] = load(path, options);
-
-    if (error != dotenv::dotenv_error::success) {
-        return std::unexpected(error);
+dotenv::load(std::string_view path, const load_options &options) noexcept {
+    auto res = load_legacy(path, options);
+    // load_legacy returns pair<dotenv_error, int>
+    if (res.first != dotenv::dotenv_error::success) {
+        return std::unexpected(res.first);
     }
-
-    return count;
+    return res.second;
 }
 
 // Traditional backend (C++23 enhanced API)
 std::expected<int, dotenv::dotenv_error>
-dotenv::load_traditional_expected(std::string_view path,
-                                  const load_options &options) noexcept {
-    auto [error, count] = load_traditional(path, options);
-
-    if (error != dotenv::dotenv_error::success) {
-        return std::unexpected(error);
+dotenv::load_traditional(std::string_view path,
+                         const load_options &options) noexcept {
+    auto res = load_traditional_legacy(path, options);
+    if (res.first != dotenv::dotenv_error::success) {
+        return std::unexpected(res.first);
     }
-
-    return count;
+    return res.second;
 }
 
 #ifdef DOTENV_SIMD_ENABLED
 // SIMD backend (C++23 enhanced API)
 std::expected<int, dotenv::dotenv_error>
-dotenv::load_simd_expected(std::string_view path,
-                           const load_options &options) noexcept {
-    auto [error, count] = load_simd(path, options);
-
-    if (error != dotenv::dotenv_error::success) {
-        return std::unexpected(error);
+dotenv::load_simd(std::string_view path, const load_options &options) noexcept {
+    auto res = load_simd_legacy(path, options);
+    if (res.first != dotenv::dotenv_error::success) {
+        return std::unexpected(res.first);
     }
-
-    return count;
+    return res.second;
 }
 #endif
-#endif // DOTENV_HAS_EXPECTED
+#endif // DOTENV_HAS_STD_EXPECTED
+
+// Deprecated C-style int wrappers (forward to raw implementations)
+int dotenv::load(std::string_view path, int replace,
+                 bool apply_system_env) noexcept {
+    return load_raw(path, replace, apply_system_env);
+}
+
+int dotenv::load_traditional(std::string_view path, int replace,
+                             bool apply_system_env) noexcept {
+    return load_traditional_raw(path, replace, apply_system_env);
+}
 
 // ===== VARIABLE ACCESS API IMPLEMENTATIONS =====
 
-std::string dotenv::value(std::string_view key,
-                          std::string_view default_value) {
+auto dotenv::value(std::string_view key, std::string_view default_value)
+    -> std::string {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -990,12 +1029,13 @@ std::string dotenv::value(std::string_view key,
     return (value != nullptr) ? std::string(value) : std::string(default_value);
 }
 
-std::string dotenv::value_or(std::string_view key,
-                             std::string_view fallback_value) {
+auto dotenv::value_or(std::string_view key, std::string_view fallback_value)
+    -> std::string {
     return value(key, fallback_value);
 }
 
-std::optional<std::string> dotenv::try_value(std::string_view key) noexcept {
+auto dotenv::try_value(std::string_view key) noexcept
+    -> std::optional<std::string> {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -1013,7 +1053,7 @@ std::optional<std::string> dotenv::try_value(std::string_view key) noexcept {
     return std::nullopt;
 }
 
-bool dotenv::contains(std::string_view key) {
+auto dotenv::contains(std::string_view key) -> bool {
     std::lock_guard<std::mutex> lock(envMapMutex);
 
     std::string key_str(key);
@@ -1039,7 +1079,7 @@ void dotenv::save_to_file(std::string_view path) {
     }
 }
 
-#if DOTENV_HAS_EXPECTED
+#if DOTENV_HAS_STD_EXPECTED
 std::expected<std::string, dotenv::dotenv_error>
 dotenv::value_expected(std::string_view key) {
     std::lock_guard<std::mutex> lock(envMapMutex);
@@ -1058,7 +1098,7 @@ dotenv::value_expected(std::string_view key) {
 
     return std::unexpected(dotenv::dotenv_error::key_not_found);
 }
-#endif // DOTENV_HAS_EXPECTED
+#endif // DOTENV_HAS_STD_EXPECTED
 
 // ===== LEGACY API COMPATIBILITY WRAPPERS =====
 // Note: The load() and load_traditional() functions with int/bool parameters

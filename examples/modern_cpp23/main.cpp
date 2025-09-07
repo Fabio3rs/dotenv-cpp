@@ -24,7 +24,7 @@ void demonstrate_cpp23_expected() {
     {
         std::cout << "1. 🎯 std::expected basic usage:\n";
 
-        auto result = dotenv::load_expected("app.env");
+        auto result = dotenv::load("app.env", {});
         if (result) {
 #if HAS_FORMAT
             std::cout << std::format("   ✅ Loaded {} variables\n", *result);
@@ -47,7 +47,7 @@ void demonstrate_cpp23_expected() {
         std::cout << "\n2. 🔗 Monadic operations:\n";
 
         auto pipeline =
-            dotenv::load_expected("app.env")
+            dotenv::load("app.env", {})
                 .transform([](int count) {
                     std::cout << "   🔄 Transform: Processing " << count
                               << " variables\n";
@@ -73,18 +73,18 @@ void demonstrate_cpp23_expected() {
         std::cout << "\n3. 🛡️  Robust error handling with fallback:\n";
 
         auto robust_load =
-            dotenv::load_expected("nonexistent.env")
+            dotenv::load("nonexistent.env", {})
                 .or_else([](auto error)
                              -> std::expected<int, dotenv::dotenv_error> {
                     std::cout
                         << "   🔧 Primary file failed, trying fallback...\n";
-                    return dotenv::load_expected("fallback.env");
+                    return dotenv::load("fallback.env", {});
                 })
                 .or_else(
                     [](auto error) -> std::expected<int, dotenv::dotenv_error> {
                         std::cout
                             << "   🔧 Fallback failed, using app.env...\n";
-                        return dotenv::load_expected("app.env");
+                        return dotenv::load("app.env", {});
                     });
 
         if (robust_load) {
@@ -105,21 +105,24 @@ void demonstrate_cpp23_expected() {
         std::cout << "\n4. 🚀 Advanced functional composition:\n";
 
         auto validate_config =
-            [](int count) -> std::expected<std::string, std::string> {
+            [](int count) -> std::expected<std::string, dotenv::dotenv_error> {
             if (count == 0) {
-                return std::unexpected("No configuration loaded");
+                return std::unexpected(dotenv::dotenv_error::file_not_found);
             }
             if (count < 5) {
-                return std::unexpected("Insufficient configuration variables");
+                return std::unexpected(dotenv::dotenv_error::invalid_format);
             }
-            return "Configuration is valid";
+            return std::string("Configuration is valid");
         };
 
-        auto config_result = dotenv::load_expected("app.env").and_then(
-            [&](int count) -> std::expected<std::string, std::string> {
-                std::cout << "   🔍 Validating configuration...\n";
-                return validate_config(count);
-            });
+        auto config_result =
+            dotenv::load("app.env", {})
+                .and_then(
+                    [&](int count)
+                        -> std::expected<std::string, dotenv::dotenv_error> {
+                        std::cout << "   🔍 Validating configuration...\n";
+                        return validate_config(count);
+                    });
 
         if (config_result) {
 #if HAS_FORMAT
@@ -130,10 +133,10 @@ void demonstrate_cpp23_expected() {
         } else {
 #if HAS_FORMAT
             std::cout << std::format("   ❌ Validation failed: {}\n",
-                                     config_result.error());
+                                     static_cast<int>(config_result.error()));
 #else
-            std::cout << "   ❌ Validation failed: " << config_result.error()
-                      << "\n";
+            std::cout << "   ❌ Validation failed: "
+                      << static_cast<int>(config_result.error()) << "\n";
 #endif
         }
     }
@@ -143,7 +146,7 @@ void demonstrate_cpp23_expected() {
         std::cout << "\n5. 🎯 Safe value extraction:\n";
 
         // Using value_or for safe defaults
-        auto safe_count = dotenv::load_expected("missing.env").value_or(0);
+        auto safe_count = dotenv::load("missing.env", {}).value_or(0);
 #if HAS_FORMAT
         std::cout << std::format("   📊 Safe count with default: {}\n",
                                  safe_count);
@@ -153,15 +156,15 @@ void demonstrate_cpp23_expected() {
 
         // Chaining with error handling
         auto app_name =
-            dotenv::load_expected("app.env")
+            dotenv::load("app.env", {})
                 .transform([](int) { return dotenv::try_value("APP_NAME"); })
                 .value_or(std::optional<std::string>{});
 
-        if (app_name && app_name->has_value()) {
+        if (app_name.has_value()) {
 #if HAS_FORMAT
-            std::cout << std::format("   🏷️  App name: {}\n", **app_name);
+            std::cout << std::format("   🏷️  App name: {}\n", *app_name);
 #else
-            std::cout << "   🏷️  App name: " << **app_name << "\n";
+            std::cout << "   🏷️  App name: " << *app_name << "\n";
 #endif
         } else {
             std::cout << "   ⚠️  App name not configured\n";

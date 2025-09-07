@@ -5,8 +5,15 @@ project(basic_usage_example
     DESCRIPTION "Basic usage example for dotenv-cpp"
 )
 
-# Modern C++20 as minimum requirement
-set(CMAKE_CXX_STANDARD 20)
+# Use the same C++ standard as the main project
+# Get the detected C++ standard from parent or use C++20 as fallback
+if(DEFINED DOTENV_DETECTED_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD ${DOTENV_DETECTED_CXX_STANDARD})
+    message(STATUS "🔧 Using detected C++ standard: ${DOTENV_DETECTED_CXX_STANDARD}")
+else()
+    set(CMAKE_CXX_STANDARD 20)
+    message(STATUS "🔧 Using fallback C++ standard: 20")
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -18,17 +25,21 @@ elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC")
 endif()
 
 # Try to find dotenv via find_package first (for installed library)
-find_package(dotenv QUIET)
+# But only if we're building standalone (not as part of main project)
+if(NOT TARGET dotenv_lib)
+    find_package(dotenv QUIET)
+endif()
 
-if(dotenv_FOUND)
+if(TARGET dotenv::dotenv_lib)
     message(STATUS "✅ Using installed dotenv library")
     add_executable(basic_usage_example main.cpp)
     target_link_libraries(basic_usage_example dotenv::dotenv_lib)
-else()
-    message(STATUS "📦 dotenv not found, using local build")
-    # Fallback: use parent project's dotenv_lib target
+elseif(TARGET dotenv_lib)
+    message(STATUS "📦 Using local dotenv_lib target from main project")
     add_executable(basic_usage_example main.cpp)
     target_link_libraries(basic_usage_example dotenv_lib)
+else()
+    message(FATAL_ERROR "❌ No dotenv library found. Please install dotenv or build as part of main project.")
 endif()
 
 # Copy example.env to build directory for runtime

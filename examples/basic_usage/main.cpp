@@ -8,7 +8,7 @@ int main() {
 
     // 1. Carregar arquivo .env
     std::cout << "1. Loading example.env file..." << std::endl;
-    auto [error, loaded_vars] = dotenv::load("example.env");
+    auto [error, loaded_vars] = dotenv::load_legacy("example.env");
     if (error != dotenv::dotenv_error::success) {
         std::cerr << "Failed to load example.env file! Error: "
                   << static_cast<int>(error) << '\n';

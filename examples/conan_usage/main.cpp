@@ -14,7 +14,7 @@ int main() {
     std::cout << "Created example.env file\n";
 
     // Load the .env file using structured bindings
-    auto [error, loaded_vars] = dotenv::load("example.env");
+    auto [error, loaded_vars] = dotenv::load_legacy("example.env");
     if (error != dotenv::dotenv_error::success) {
         std::cerr << "Failed to load example.env (error: "
                   << static_cast<int>(error) << ")\n";
