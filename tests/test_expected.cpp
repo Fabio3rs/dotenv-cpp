@@ -104,5 +104,13 @@ auto main() -> int {
 
     test_api_compatibility();
 
+    // Clean up all test variables to avoid interfering with other tests
+    dotenv::unset("TEST_VAR");
+    dotenv::unset("ANOTHER_VAR");
+
+    // Clean up process environment variables as well
+    unsetenv("TEST_VAR");
+    unsetenv("ANOTHER_VAR");
+
     return 0;
 }

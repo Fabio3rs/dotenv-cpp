@@ -1,53 +1,94 @@
 #include "dotenv.hpp"
+#include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <thread>
+#include <unistd.h>
 
 class DotenvTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        // Set up environment variables for testing
-        dotenv::set("TEST_INT", "123");
-        dotenv::set("TEST_FLOAT", "456.78");
-        dotenv::set("TEST_INVALID", "invalid");
+        // Create unique test directory per process to avoid conflicts
+        auto pid = static_cast<unsigned long>(::getpid());
+        auto tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        test_dir =
+            std::filesystem::temp_directory_path() /
+            ("dotenv_test_" + std::to_string(pid) + "_" + std::to_string(tid));
+        std::filesystem::create_directories(test_dir);
+
+        // Set up environment variables for testing with unique names
+        test_prefix = "DOTENV_TEST_" + std::to_string(pid) + "_" +
+                      std::to_string(tid) + "_";
+        dotenv::set(test_prefix + "INT", "123");
+        dotenv::set(test_prefix + "FLOAT", "456.78");
+        dotenv::set(test_prefix + "INVALID", "invalid");
+
+        // Create file paths
+        test_env_file = test_dir / "test.env";
+        parser_test_file = test_dir / "parser_test.env";
     }
 
     void TearDown() override {
         // Clean up environment variables after testing
-        dotenv::unset("TEST_INT");
-        dotenv::unset("TEST_FLOAT");
-        dotenv::unset("TEST_INVALID");
+        dotenv::unset(test_prefix + "INT");
+        dotenv::unset(test_prefix + "FLOAT");
+        dotenv::unset(test_prefix + "INVALID");
+
+        // Clean up any test-specific variables
+        dotenv::unset("NEW_KEY");
+        dotenv::unset("SAVE_KEY");
+        dotenv::unset("STRING_KEY");
+        dotenv::unset("OPTIONAL_INT");
+        dotenv::unset("OPTIONAL_FLOAT");
+        dotenv::unset("OPTIONAL_INVALID");
+        dotenv::unset("OPTIONAL_EMPTY");
+        dotenv::unset("REPLACE_TEST");
+        dotenv::unset("NEW_REPLACE_TEST");
+        dotenv::unset("UNSET_TEST");
+
+        // Clean up test files
+        std::error_code error_code;
+        std::filesystem::remove_all(test_dir, error_code);
     }
+
+    std::filesystem::path test_dir;
+    std::filesystem::path test_env_file;
+    std::filesystem::path parser_test_file;
+    std::string test_prefix;
 };
 
 TEST_F(DotenvTest, GetInt) {
-    int value = dotenv::value_required<int>("TEST_INT");
+    int value = dotenv::value_required<int>(test_prefix + "INT");
     EXPECT_EQ(value, 123);
 }
 
 TEST_F(DotenvTest, GetFloat) {
-    auto value = dotenv::value_required<float>("TEST_FLOAT");
+    auto value = dotenv::value_required<float>(test_prefix + "FLOAT");
     EXPECT_FLOAT_EQ(value, 456.78F);
 }
 
 TEST_F(DotenvTest, GetWithDefault) {
-    int value = dotenv::value_or<int>("NON_EXISTENT_KEY", 42);
-    EXPECT_EQ(value, 42);
+    constexpr int default_value = 42;
+    int value = dotenv::value_or<int>("NON_EXISTENT_KEY", default_value);
+    EXPECT_EQ(value, default_value);
 }
 
 TEST_F(DotenvTest, GetInvalidWithFallback) {
-    int value = dotenv::value_or<int>("TEST_INVALID", 42);
-    EXPECT_EQ(value, 42); // Should fallback to 42 for invalid conversion
+    constexpr int fallback_value = 42;
+    int value = dotenv::value_or<int>(test_prefix + "INVALID", fallback_value);
+    EXPECT_EQ(value,
+              fallback_value); // Should fallback to 42 for invalid conversion
 }
 
 TEST_F(DotenvTest, GetRequiredThrows) {
-    EXPECT_THROW(dotenv::value_required<int>("TEST_INVALID"),
+    EXPECT_THROW(dotenv::value_required<int>(test_prefix + "INVALID"),
                  std::invalid_argument);
     EXPECT_THROW(dotenv::value_required<int>("NON_EXISTENT_KEY"),
                  std::invalid_argument);
 }
 
 TEST_F(DotenvTest, ContainsKey) {
-    EXPECT_TRUE(dotenv::contains("TEST_INT"));
+    EXPECT_TRUE(dotenv::contains(test_prefix + "INT"));
     EXPECT_FALSE(dotenv::contains("NON_EXISTENT_KEY"));
 }
 
@@ -59,10 +100,10 @@ TEST_F(DotenvTest, SetAndGet) {
 
 TEST_F(DotenvTest, SaveAndLoad) {
     dotenv::set("SAVE_KEY", "save_value");
-    dotenv::save_to_file("test.env");
+    dotenv::save_to_file(test_env_file.string());
 
     dotenv::set("SAVE_KEY", "");
-    auto [error, count] = dotenv::load_legacy("test.env");
+    auto [error, count] = dotenv::load_legacy(test_env_file.string());
     EXPECT_EQ(error, dotenv::dotenv_error::success);
 
     std::string value = dotenv::value("SAVE_KEY");
@@ -87,7 +128,7 @@ TEST_F(DotenvTest, GetString) {
 
 TEST_F(DotenvTest, ParserRobust) {
     // Criar arquivo .env de teste com várias features
-    std::ofstream env_file("parser_test.env");
+    std::ofstream env_file(parser_test_file);
     env_file << "# Este é um comentário\n";
     env_file << "\n"; // Linha vazia
     env_file << "SIMPLE_KEY=simple_value\n";
@@ -103,7 +144,7 @@ TEST_F(DotenvTest, ParserRobust) {
     env_file.close();
 
     // Carregar o arquivo
-    auto [error, count] = dotenv::load_legacy("parser_test.env");
+    auto [error, count] = dotenv::load_legacy(parser_test_file.string());
     EXPECT_EQ(error, dotenv::dotenv_error::success);
     EXPECT_GT(count, 0);
 
@@ -118,8 +159,16 @@ TEST_F(DotenvTest, ParserRobust) {
     EXPECT_EQ(dotenv::value("EMPTY_VALUE"), "");
     EXPECT_EQ(dotenv::value("QUOTED_EMPTY"), "");
 
-    // Limpar arquivo de teste
-    std::remove("parser_test.env");
+    // Clean up variables loaded from file
+    dotenv::unset("SIMPLE_KEY");
+    dotenv::unset("KEY_WITH_SPACES");
+    dotenv::unset("QUOTED_DOUBLE");
+    dotenv::unset("QUOTED_SINGLE");
+    dotenv::unset("ESCAPED_CHARS");
+    dotenv::unset("VALUE_WITH_EQUALS");
+    dotenv::unset("TRIM_KEY");
+    dotenv::unset("EMPTY_VALUE");
+    dotenv::unset("QUOTED_EMPTY");
 }
 
 TEST_F(DotenvTest, OptionalAPI) {

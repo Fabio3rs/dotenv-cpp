@@ -178,5 +178,15 @@ auto main() -> int {
 
     test_monadic_operations();
 
+    // Clean up all test variables to avoid interfering with other tests
+    dotenv::unset("TEST_VAR");
+    dotenv::unset("ANOTHER_VAR");
+    dotenv::unset("APP_NAME");
+
+    // Clean up process environment variables as well
+    unsetenv("TEST_VAR");
+    unsetenv("ANOTHER_VAR");
+    unsetenv("APP_NAME");
+
     return 0;
 }

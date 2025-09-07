@@ -126,5 +126,19 @@ auto main() -> int {
 
     test_process_env_functions();
 
+    // Clean up all test variables to avoid interfering with other tests
+    dotenv::unset("TEST_VAR");
+    dotenv::unset("ANOTHER_VAR");
+    dotenv::unset("STAGE");
+    dotenv::unset("DEBUG_MODE");
+    dotenv::unset("LOG_LEVEL");
+
+    // Clean up process environment variables as well
+    unsetenv("TEST_VAR");
+    unsetenv("ANOTHER_VAR");
+    unsetenv("STAGE");
+    unsetenv("DEBUG_MODE");
+    unsetenv("LOG_LEVEL");
+
     return 0;
 }
